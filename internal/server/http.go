@@ -28,7 +28,7 @@ func New(service *service.Service, jwt *jwt.Service) *Server {
 	}
 
 	srv.publicRouter.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "https://eurovision-voting-frontend-1-0-0.onrender.com"},
+		AllowedOrigins:   []string{"http://localhost:5173", "https://eurovision-voting-fe.onrender.com"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
