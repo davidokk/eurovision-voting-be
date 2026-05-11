@@ -59,7 +59,7 @@ func (s *Server) ratePerformance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.service.RatePerformance(r.Context(), userID, req.PerformanceID, req.Score, req.Comment); err != nil {
+	if err := s.service.RatePerformance(r.Context(), userID, req.PerformanceID, req.Score, req.Comment, req.Gif); err != nil {
 		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}

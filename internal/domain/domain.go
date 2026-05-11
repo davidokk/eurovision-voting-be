@@ -49,6 +49,7 @@ type ScoreView struct {
 	Username string  `json:"username"`
 	Score    int     `json:"score"`
 	Comment  *string `json:"comment,omitempty"`
+	GifURL   *string `json:"gif_url,omitempty"`
 }
 
 type PerformanceWithScores struct {

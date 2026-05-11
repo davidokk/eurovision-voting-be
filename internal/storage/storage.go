@@ -165,7 +165,8 @@ func (s *Storage) GetContestView(ctx context.Context, contestID uuid.UUID) (*dom
 						'user_id', s.user_id,
 						'username', u.username,
 						'score', s.score,
-						'comment', s.comment
+						'comment', s.comment,
+						'gif_url', s.gif_url
 					)
 				) AS scores
 			FROM scores s JOIN users u on s.user_id = u.id
@@ -203,21 +204,26 @@ func (s *Storage) GetContestView(ctx context.Context, contestID uuid.UUID) (*dom
 	}, nil
 }
 
-func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uuid.UUID, score int, comment string) error {
+func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uuid.UUID, score int, comment string, gif string) error {
 	query := `
 		insert into scores 
-			(user_id, performance_id, score, comment)
+			(user_id, performance_id, score, comment, gif_url)
 		values 
-			($1, $2, $3, $4)
+			($1, $2, $3, $4, $5)
 		on conflict (user_id, performance_id) do update set
 			score = $3,
 			comment = CASE
 				WHEN EXCLUDED.comment <> ''
                 THEN EXCLUDED.comment
                 ELSE scores.comment
+			END,
+			gif_url = CASE
+				WHEN EXCLUDED.gif_url <> ''
+                THEN EXCLUDED.gif_url
+                ELSE scores.gif_url
     		END
 	`
-	_, err := s.pool.Exec(ctx, query, userID, performanceID, score, comment)
+	_, err := s.pool.Exec(ctx, query, userID, performanceID, score, comment, gif)
 	return err
 }
 

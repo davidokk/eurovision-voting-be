@@ -52,6 +52,7 @@ type RatePerformanceRequest struct {
 	PerformanceID uuid.UUID
 	Score         int    `json:"score"`
 	Comment       string `json:"comment"`
+	Gif           string `json:"gif_url"`
 }
 
 func (r *RatePerformanceRequest) Bind(req *http.Request) error {

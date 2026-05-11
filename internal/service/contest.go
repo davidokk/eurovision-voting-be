@@ -29,7 +29,7 @@ func (s *Service) GetContestsByYears(ctx context.Context) (map[int][]domain.Cont
 	return res, nil
 }
 
-func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uuid.UUID, score int, comment string) error {
+func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uuid.UUID, score int, comment, gif string) error {
 	c, err := s.storage.GetContestByPerformance(ctx, performanceID)
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 	if time.Now().Before(c.Starts) || time.Now().After(c.Ends) {
 		return ErrContestClosed
 	}
-	return s.storage.RatePerformance(ctx, userID, performanceID, score, comment)
+	return s.storage.RatePerformance(ctx, userID, performanceID, score, comment, gif)
 }
 
 func (s *Service) UpdatePerformance(ctx context.Context, id uuid.UUID, qualified bool) error {
