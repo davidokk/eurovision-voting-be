@@ -40,5 +40,5 @@ jobs:
           context: .
           push: true
           tags: |
-            yourname/app:latest
-            yourname/app:${{ steps.tag_version.outputs.new_tag }}
+            davidokk/eurovision-voting-be:latest
+            davidokk/eurovision-voting-be:${{ steps.tag_version.outputs.new_tag }}
