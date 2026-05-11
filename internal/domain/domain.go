@@ -10,6 +10,7 @@ type User struct {
 	ID             uuid.UUID
 	Username       string
 	HashedPassword string
+	Role           *string
 }
 
 type Country struct {
@@ -51,20 +52,15 @@ type ScoreView struct {
 }
 
 type PerformanceWithScores struct {
-	PerformanceID string `json:"performance_id"`
-
-	Country Country `json:"country"`
-
-	Artist string `json:"artist"`
-	Song   string `json:"song"`
-
-	Number int `json:"number"`
-
-	YoutubeLink string `json:"youtube_link"`
-
-	Scores []ScoreView `json:"scores"`
-
-	TotalScore float64 `json:"total_score"`
+	PerformanceID string      `json:"performance_id"`
+	Country       Country     `json:"country"`
+	Artist        string      `json:"artist"`
+	Song          string      `json:"song"`
+	Number        int         `json:"number"`
+	YoutubeLink   string      `json:"youtube_link"`
+	Scores        []ScoreView `json:"scores"`
+	TotalScore    float64     `json:"total_score"`
+	Qualified     bool        `json:"qualified"`
 }
 
 type ContestParticipantView struct {

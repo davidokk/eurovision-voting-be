@@ -64,3 +64,7 @@ func (s *Service) SignIn(ctx context.Context, username, password string) (string
 
 	return token, nil
 }
+
+func (s *Service) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
+	return s.storage.GetUserByUsername(ctx, username)
+}

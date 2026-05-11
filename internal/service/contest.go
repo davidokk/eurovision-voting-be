@@ -39,3 +39,7 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 	}
 	return s.storage.RatePerformance(ctx, userID, performanceID, score, comment)
 }
+
+func (s *Service) UpdatePerformance(ctx context.Context, id uuid.UUID, qualified bool) error {
+	return s.storage.UpdatePerformance(ctx, id, qualified)
+}

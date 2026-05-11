@@ -28,7 +28,10 @@ func New(service *service.Service, jwt *jwt.Service) *Server {
 	}
 
 	srv.publicRouter.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", "https://eurovision-voting-fe.onrender.com"},
+		AllowedOrigins: []string{
+			"http://localhost:5173",
+			"https://eurovision-voting-fe.onrender.com",
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
@@ -57,6 +60,11 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 		})
 
 		r.With(s.AuthMiddleware).Post("/performance/{id}/rate", s.ratePerformance)
+	})
+
+	s.publicRouter.Route("/admin", func(r chi.Router) {
+		r.Use(s.CheckRoleMw("ADMIN"))
+		r.Put("/performance/{id}", s.updatePerformance)
 	})
 }
 

@@ -60,7 +60,7 @@ func (r *RatePerformanceRequest) Bind(req *http.Request) error {
 	}
 	id := chi.URLParam(req, "id")
 	r.PerformanceID, _ = uuid.Parse(id)
-	return nil 
+	return nil
 }
 
 func (r *RatePerformanceRequest) Validate() error {
@@ -69,6 +69,27 @@ func (r *RatePerformanceRequest) Validate() error {
 	}
 	if r.Score < 1 || r.Score > 10 {
 		return errors.New("score must be between 1 and 10")
+	}
+	return nil
+}
+
+type UpdatePerformanceRequest struct {
+	PerformanceID uuid.UUID
+	Qualified     bool `json:"qualified"`
+}
+
+func (r *UpdatePerformanceRequest) Bind(req *http.Request) error {
+	if err := json.NewDecoder(req.Body).Decode(r); err != nil {
+		return err
+	}
+	id := chi.URLParam(req, "id")
+	r.PerformanceID, _ = uuid.Parse(id)
+	return nil
+}
+
+func (r *UpdatePerformanceRequest) Validate() error {
+	if r.PerformanceID == uuid.Nil {
+		return errors.New("performance_id is missing")
 	}
 	return nil
 }

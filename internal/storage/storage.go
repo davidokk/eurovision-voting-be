@@ -55,19 +55,19 @@ func (s *Storage) CreateUser(ctx context.Context, user *domain.User) error {
 }
 
 func (s *Storage) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
-	query := `select id, password from users where username = $1`
+	query := `select id, password, role from users where username = $1`
 	row := s.pool.QueryRow(ctx, query, username)
 	u := &domain.User{
 		Username: username,
 	}
-	if err := row.Scan(&u.ID, &u.HashedPassword); err != nil {
+	if err := row.Scan(&u.ID, &u.HashedPassword, &u.Role); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return u, nil
 }
 
 func (s *Storage) GetContestList(ctx context.Context) ([]domain.Contest, error) {
-	rows, err := s.pool.Query(ctx, "select id, year, type from contests")
+	rows, err := s.pool.Query(ctx, "select id, year, type from contests order by type")
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +119,7 @@ func (s *Storage) GetContestView(ctx context.Context, contestID uuid.UUID) (*dom
 				json_agg(
 					json_build_object(
 						'performance_id', p.id,
+						'qualified', p.qualified,
 
 						'country', json_build_object(
 							'id', co.id,
@@ -217,5 +218,13 @@ func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uui
     		END
 	`
 	_, err := s.pool.Exec(ctx, query, userID, performanceID, score, comment)
+	return err
+}
+
+func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID, qualified bool) error {
+	_, err := s.pool.Exec(
+		ctx, "update performance set qualified = $1 where id = $2",
+		qualified, performanceID,
+	)
 	return err
 }

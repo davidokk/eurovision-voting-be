@@ -66,3 +66,26 @@ func (s *Server) ratePerformance(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 }
+
+func (s *Server) updatePerformance(w http.ResponseWriter, r *http.Request) {
+	var req request.UpdatePerformanceRequest
+	if err := req.Bind(r); err != nil {
+		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err := req.Validate(); err != nil {
+		EncodeJSONResponse(w, http.StatusBadRequest, ApiError{
+			Err:  err.Error(),
+			Code: ValidatationCode,
+		})
+		return
+	}
+
+	if err := s.service.UpdatePerformance(r.Context(), req.PerformanceID, req.Qualified); err != nil {
+		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
