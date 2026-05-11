@@ -70,7 +70,33 @@ type ContestParticipantView struct {
 }
 
 type ContestView struct {
-	Contest Contest `json:"contest"`
-	// Participants []ContestParticipantView `json:"participants"`
+	Contest      Contest                 `json:"contest"`
 	Performances []PerformanceWithScores `json:"performances"`
+}
+
+type ScoreFiltered struct {
+	Username    string
+	CountryName string
+	ContestYear int
+	ContestType string
+	Score       int
+	Comment     *string
+	YoutubeLink string
+	GifURL      *string
+	Song        string
+	Artist      string
+}
+
+type SortType int
+
+const (
+	SortByTime SortType = iota
+	SortByScore
+)
+
+type Filters struct {
+	UserID      *uuid.UUID
+	CountryID   *uuid.UUID
+	ContestYear *int
+	Sort        SortType
 }

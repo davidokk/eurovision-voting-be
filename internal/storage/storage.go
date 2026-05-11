@@ -6,6 +6,7 @@ import (
 	"eurovision-voting/internal/domain"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -233,4 +234,144 @@ func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID
 		qualified, performanceID,
 	)
 	return err
+}
+
+func (s *Storage) GetScoresFiltered(ctx context.Context, f domain.Filters) ([]domain.ScoreFiltered, error) {
+	var (
+		args  []any
+		where []string
+	)
+
+	query := `
+WITH base AS (
+    SELECT 
+        u.username,
+        c.id as country_id,
+        c.name_ru as country_name,
+        co.year as contest_year,
+        co.type as contest_type,
+        sc.score,
+        sc.comment,
+        p.youtube_link as youtube_link,
+        sc.gif_url,
+        p.song as song,
+        p.artist as artist,
+        p.number as performance_number,
+        sc.user_id
+    FROM scores sc
+    JOIN users u ON u.id = sc.user_id
+    JOIN performance p ON p.id = sc.performance_id
+    JOIN countries c ON c.id = p.country_id
+    JOIN contests co ON co.id = p.contest_id
+    WHERE 1=1
+`
+	// -------------------------
+	// FILTERS
+	// -------------------------
+	if f.UserID != nil {
+		args = append(args, *f.UserID)
+		where = append(where, fmt.Sprintf("sc.user_id = $%d", len(args)))
+	}
+
+	if f.CountryID != nil {
+		args = append(args, *f.CountryID)
+		where = append(where, fmt.Sprintf("p.country_id = $%d", len(args)))
+	}
+
+	if f.ContestYear != nil {
+		args = append(args, *f.ContestYear)
+		where = append(where, fmt.Sprintf("co.year = $%d", len(args)))
+	}
+
+	if len(where) > 0 {
+		query += " AND " + strings.Join(where, " AND ")
+	}
+
+	query += `
+),
+ranked AS (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY country_id, contest_year
+            ORDER BY 
+                CASE WHEN contest_type = 'final' THEN 1 ELSE 2 END,
+                score DESC,
+                performance_number ASC
+        ) as rn
+    FROM base
+)
+SELECT 
+    username,
+    country_name,
+    contest_year,
+    contest_type,
+    score,
+    comment,
+    youtube_link,
+    gif_url,
+    song,
+    artist
+FROM ranked
+WHERE rn = 1
+`
+
+	// -------------------------
+	// SORTING (поверх уже очищенного набора)
+	// -------------------------
+	switch f.Sort {
+	case domain.SortByScore:
+		query += " ORDER BY score DESC, contest_year DESC, performance_number ASC"
+	case domain.SortByTime:
+		query += " ORDER BY contest_year DESC, performance_number ASC"
+	default:
+		query += " ORDER BY contest_year DESC, performance_number ASC"
+	}
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []domain.ScoreFiltered
+
+	for rows.Next() {
+		var r domain.ScoreFiltered
+
+		err := rows.Scan(
+			&r.Username,
+			&r.CountryName,
+			&r.ContestYear,
+			&r.ContestType,
+			&r.Score,
+			&r.Comment,
+			&r.YoutubeLink,
+			&r.GifURL,
+			&r.Song,
+			&r.Artist,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, r)
+	}
+
+	return result, rows.Err()
+}
+
+func (s *Storage) GetCountries(ctx context.Context) ([]domain.Country, error) {
+	rows, err := s.pool.Query(ctx, "select id, name_ru, flag_emogi from countries")
+	if err != nil {
+		return nil, err
+	}
+	res := []domain.Country{}
+	for rows.Next() {
+		var c domain.Country
+		if err := rows.Scan(&c.ID, &c.NameRU, &c.FlagEmoji); err != nil {
+			return nil, err
+		}
+		res = append(res, c)
+	}
+	return res, nil
 }

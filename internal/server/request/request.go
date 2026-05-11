@@ -3,8 +3,10 @@ package request
 import (
 	"encoding/json"
 	"errors"
+	"eurovision-voting/internal/domain"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
@@ -92,5 +94,62 @@ func (r *UpdatePerformanceRequest) Validate() error {
 	if r.PerformanceID == uuid.Nil {
 		return errors.New("performance_id is missing")
 	}
+	return nil
+}
+
+type GetScoresFilteredRequest struct {
+	UserID      *uuid.UUID
+	CountryID   *uuid.UUID
+	ContestYear *int
+	Sort        domain.SortType
+}
+
+func (r *GetScoresFilteredRequest) Bind(req *http.Request) error {
+	q := req.URL.Query()
+
+	if v := q.Get("user_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			return fmt.Errorf("invalid user_id")
+		}
+		r.UserID = &id
+	}
+
+	if v := q.Get("country_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			return fmt.Errorf("invalid country_id")
+		}
+		r.CountryID = &id
+	}
+
+	if v := q.Get("year"); v != "" {
+		year, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("invalid year")
+		}
+		r.ContestYear = &year
+	}
+
+	switch q.Get("sort") {
+	case "score":
+		r.Sort = domain.SortByScore
+	case "time", "":
+		r.Sort = domain.SortByTime
+	default:
+		return fmt.Errorf("invalid sort value")
+	}
+
+	return nil
+}
+
+func (r *GetScoresFilteredRequest) Validate() error {
+	switch r.Sort {
+	case domain.SortByTime,
+		domain.SortByScore:
+	default:
+		return fmt.Errorf("invalid sort type")
+	}
+
 	return nil
 }

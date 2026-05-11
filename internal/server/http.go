@@ -59,6 +59,9 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 			r.Get("/{id}", s.getContestViewHandler)
 		})
 
+		r.Get("/scores", s.getScoresFiltered)
+		r.Get("/countries", s.getCountries)
+
 		r.With(s.AuthMiddleware).Post("/performance/{id}/rate", s.ratePerformance)
 	})
 
