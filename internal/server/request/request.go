@@ -78,7 +78,8 @@ func (r *RatePerformanceRequest) Validate() error {
 
 type UpdatePerformanceRequest struct {
 	PerformanceID uuid.UUID
-	Qualified     bool `json:"qualified"`
+	Qualified     bool   `json:"qualified"`
+	YoutubeLink   string `json:"youtube_link"`
 }
 
 func (r *UpdatePerformanceRequest) Bind(req *http.Request) error {

@@ -228,10 +228,10 @@ func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uui
 	return err
 }
 
-func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID, qualified bool) error {
+func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID, qualified bool, link string) error {
 	_, err := s.pool.Exec(
-		ctx, "update performance set qualified = $1 where id = $2",
-		qualified, performanceID,
+		ctx, "update performance set qualified = $1, youtube_link = $2 where id = $3",
+		qualified, link, performanceID,
 	)
 	return err
 }
