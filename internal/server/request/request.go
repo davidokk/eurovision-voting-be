@@ -154,3 +154,26 @@ func (r *GetScoresFilteredRequest) Validate() error {
 
 	return nil
 }
+
+type SendMessageRequest struct {
+	ContestID uuid.UUID
+	Message   string
+}
+
+func (r *SendMessageRequest) Bind(req *http.Request) error {
+	ci := req.URL.Query().Get("contest_id")
+	var err error
+	r.ContestID, err = uuid.Parse(ci)
+	if err != nil {
+		return fmt.Errorf("contest_id: %w", err)
+	} 
+	r.Message = req.URL.Query().Get("message")
+	return nil 
+}
+
+func (r *SendMessageRequest) Validate() error {
+	if r.Message == "" {
+		return fmt.Errorf("message empty")
+	}
+	return nil
+}

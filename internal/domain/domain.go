@@ -100,3 +100,11 @@ type Filters struct {
 	ContestYear *int
 	Sort        SortType
 }
+
+type Message struct {
+	UserID    uuid.UUID
+	ContestID uuid.UUID `json:"contestId"`
+	Username  string    `json:"username"`
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"createdAt"`
+}

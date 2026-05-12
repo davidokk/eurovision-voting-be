@@ -129,3 +129,23 @@ func (s *Server) getCountries(w http.ResponseWriter, r *http.Request) {
 
 	EncodeJSONResponse(w, http.StatusOK, res)
 }
+
+func (s *Server) getMessages(w http.ResponseWriter, r *http.Request) {
+	contest := r.URL.Query().Get("contest_id")
+	contestID, err := uuid.Parse(contest)
+	if err != nil {
+		EncodeJSONResponse(w, http.StatusBadRequest, ApiError{
+			Err:  err.Error(),
+			Code: ValidatationCode,
+		})
+		return
+	}
+
+	res, err := s.service.GetMessages(r.Context(), contestID)
+	if err != nil {
+		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	EncodeJSONResponse(w, http.StatusOK, res)
+}

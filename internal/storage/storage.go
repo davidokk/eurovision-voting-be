@@ -67,6 +67,16 @@ func (s *Storage) GetUserByUsername(ctx context.Context, username string) (*doma
 	return u, nil
 }
 
+func (s *Storage) GetUser(ctx context.Context, id uuid.UUID) (*domain.User, error) {
+	query := `select id, username, password, role from users where id = $1`
+	row := s.pool.QueryRow(ctx, query, id)
+	u := &domain.User{}
+	if err := row.Scan(&u.ID, &u.Username, &u.HashedPassword, &u.Role); err != nil {
+		return nil, fmt.Errorf("scan: %w", err)
+	}
+	return u, nil
+}
+
 func (s *Storage) GetContestList(ctx context.Context) ([]domain.Contest, error) {
 	rows, err := s.pool.Query(ctx, "select id, year, type from contests order by type")
 	if err != nil {
@@ -374,4 +384,68 @@ func (s *Storage) GetCountries(ctx context.Context) ([]domain.Country, error) {
 		res = append(res, c)
 	}
 	return res, nil
+}
+
+func (s *Storage) InsertMessage(ctx context.Context, msg *domain.Message) error {
+	query := `
+		INSERT INTO messages (
+			contest_id,
+			user_id,
+			message,
+			created_at
+		)
+		VALUES ($1, $2, $3, $4)
+	`
+	_, err := s.pool.Exec(
+		ctx,
+		query,
+		msg.ContestID,
+		msg.UserID,
+		msg.Message,
+		msg.CreatedAt,
+	)
+	return err
+}
+
+func (s *Storage) GetMessages(ctx context.Context, contestID uuid.UUID) ([]domain.Message, error) {
+	query := `
+		SELECT 
+			m.contest_id,
+			m.user_id,
+			m.message,
+			m.created_at,
+			u.username
+		FROM messages m
+			JOIN users u on u.id = m.user_id
+		WHERE contest_id = $1
+		ORDER BY created_at ASC
+	`
+	rows, err := s.pool.Query(ctx, query, contestID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	messages := []domain.Message{}
+
+	for rows.Next() {
+		var m domain.Message
+
+		if err := rows.Scan(
+			&m.ContestID,
+			&m.UserID,
+			&m.Message,
+			&m.CreatedAt,
+			&m.Username,
+		); err != nil {
+			return nil, err
+		}
+		messages = append(messages, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return messages, nil
 }

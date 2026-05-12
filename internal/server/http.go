@@ -63,6 +63,13 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 		r.Get("/countries", s.getCountries)
 
 		r.With(s.AuthMiddleware).Post("/performance/{id}/rate", s.ratePerformance)
+
+		r.Get("/ws", s.serveWS())
+
+		r.Route("/message", func(r chi.Router) {
+			r.With(s.AuthMiddleware).Post("/send", s.sendMessage)
+			r.Get("/", s.getMessages)
+		})
 	})
 
 	s.publicRouter.Route("/admin", func(r chi.Router) {
