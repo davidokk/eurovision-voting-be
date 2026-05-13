@@ -52,6 +52,7 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/signup", s.signupHandler)
 			r.Post("/signin", s.signinHandler)
+			r.With(s.AuthMiddleware).Get("/validate", func(w http.ResponseWriter, r *http.Request) {})
 		})
 
 		r.Route("/contest", func(r chi.Router) {

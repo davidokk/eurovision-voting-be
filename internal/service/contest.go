@@ -38,7 +38,9 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 	if time.Now().Before(c.Starts) || time.Now().After(c.Ends) {
 		return ErrContestClosed
 	}
-	if err := s.storage.RatePerformance(ctx, userID, performanceID, score, comment, gif); err != nil {
+	oldScore, err := s.storage.RatePerformance(ctx, userID, performanceID, score, comment, gif)
+	if err != nil {
+		log.Error().Err(err).Send()
 		return err
 	}
 	if err := s.storage.InsertMessage(ctx, &domain.Message{
@@ -47,31 +49,35 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 		PerformanceID: performanceID,
 		CreatedAt:     time.Now(),
 		ContestID:     c.ID,
+		OldScore:      &oldScore,
+		Score:         &score,
+		Comment:       &comment,
+		Gif:           &gif,
 	}); err != nil {
 		log.Error().Err(err).Msg("cannot insert score message")
 	}
 	country, err := s.storage.GetCountryByPerformance(ctx, performanceID)
 	if err != nil {
 		log.Error().Err(err).Msg("cannot get country")
-		return nil 
+		return nil
 	}
 	u, err := s.storage.GetUser(ctx, userID)
 	if err != nil {
 		log.Error().Err(err).Msg("cannot get user")
-		return nil 
+		return nil
 	}
 	s.broadcastMessage(&domain.Message{
-		Type: "system",
-		UserID: userID,
-		Username: u.Username,
-		ContestID: c.ID,
+		Type:          "system",
+		UserID:        userID,
+		Username:      u.Username,
+		ContestID:     c.ID,
 		PerformanceID: performanceID,
-		CreatedAt: time.Now(),
-		Score: &score,
-		Gif: &gif,
-		Comment: &comment,
-		Country: &country.NameRU,
-		CountryFlag: &country.FlagEmoji,
+		CreatedAt:     time.Now(),
+		Score:         &score,
+		Gif:           &gif,
+		Comment:       &comment,
+		Country:       &country.NameRU,
+		CountryFlag:   &country.FlagEmoji,
 	})
 	return nil
 }

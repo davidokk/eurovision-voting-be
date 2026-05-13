@@ -113,5 +113,6 @@ type Message struct {
 	Country       *string   `json:"country"`
 	CountryFlag   *string   `json:"country_flag"`
 	Score         *int      `json:"score"`
+	OldScore      *int      `json:"old_score"`
 	Comment       *string   `json:"comment"`
 }

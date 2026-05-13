@@ -47,5 +47,9 @@ func (s *Service) SendMessage(ctx context.Context, msg *domain.Message) error {
 }
 
 func (s *Service) GetMessages(ctx context.Context, contestID uuid.UUID) ([]domain.Message, error) {
-	return s.storage.GetMessages(ctx, contestID)
+	res, err := s.storage.GetMessages(ctx, contestID)
+	if err != nil {
+		log.Error().Err(err).Send()
+	}
+	return res, err
 }

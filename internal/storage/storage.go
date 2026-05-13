@@ -215,27 +215,37 @@ func (s *Storage) GetContestView(ctx context.Context, contestID uuid.UUID) (*dom
 	}, nil
 }
 
-func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uuid.UUID, score int, comment string, gif string) error {
+func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uuid.UUID, score int, comment string, gif string) (int, error) {
 	query := `
-		insert into scores 
-			(user_id, performance_id, score, comment, gif_url)
-		values 
-			($1, $2, $3, $4, $5)
-		on conflict (user_id, performance_id) do update set
-			score = $3,
-			comment = CASE
-				WHEN EXCLUDED.comment <> ''
-                THEN EXCLUDED.comment
-                ELSE scores.comment
-			END,
-			gif_url = CASE
-				WHEN EXCLUDED.gif_url <> ''
-                THEN EXCLUDED.gif_url
-                ELSE scores.gif_url
-    		END
+		with old as (
+			select score as old_score
+			from scores
+			where user_id = $1 and performance_id = $2
+		),
+		upsert as (
+			insert into scores (user_id, performance_id, score, comment, gif_url)
+			values ($1, $2, $3, $4, $5)
+			on conflict (user_id, performance_id) do update set
+				score = $3,
+				comment = case
+					when excluded.comment <> '' then excluded.comment
+					else scores.comment
+				end,
+				gif_url = case
+					when excluded.gif_url <> '' then excluded.gif_url
+					else scores.gif_url
+				end
+			returning score
+		)
+		select old.old_score
+		from old;
 	`
-	_, err := s.pool.Exec(ctx, query, userID, performanceID, score, comment, gif)
-	return err
+	row := s.pool.QueryRow(ctx, query, userID, performanceID, score, comment, gif)
+	var old int 
+	if err := row.Scan(&old); err != nil {
+		return 0, err
+	}
+	return old, nil
 }
 
 func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID, qualified bool, link string) error {
@@ -253,10 +263,8 @@ func (s *Storage) GetScoresFiltered(ctx context.Context, f domain.Filters) ([]do
 	)
 
 	query := `
-WITH base AS (
     SELECT 
         u.username,
-        c.id as country_id,
         c.name_ru as country_name,
         co.year as contest_year,
         co.type as contest_type,
@@ -265,9 +273,7 @@ WITH base AS (
         p.youtube_link as youtube_link,
         sc.gif_url,
         p.song as song,
-        p.artist as artist,
-        p.number as performance_number,
-        sc.user_id
+        p.artist as artist
     FROM scores sc
     JOIN users u ON u.id = sc.user_id
     JOIN performance p ON p.id = sc.performance_id
@@ -297,44 +303,16 @@ WITH base AS (
 		query += " AND " + strings.Join(where, " AND ")
 	}
 
-	query += `
-),
-ranked AS (
-    SELECT *,
-        ROW_NUMBER() OVER (
-            PARTITION BY country_id, contest_year
-            ORDER BY 
-                CASE WHEN contest_type = 'final' THEN 1 ELSE 2 END,
-                score DESC,
-                performance_number ASC
-        ) as rn
-    FROM base
-)
-SELECT 
-    username,
-    country_name,
-    contest_year,
-    contest_type,
-    score,
-    comment,
-    youtube_link,
-    gif_url,
-    song,
-    artist
-FROM ranked
-WHERE rn = 1
-`
-
 	// -------------------------
 	// SORTING (поверх уже очищенного набора)
 	// -------------------------
 	switch f.Sort {
 	case domain.SortByScore:
-		query += " ORDER BY score DESC, contest_year DESC, performance_number ASC"
+		query += " ORDER BY sc.score DESC, co.year DESC, p.number ASC"
 	case domain.SortByTime:
-		query += " ORDER BY contest_year DESC, performance_number ASC"
+		query += " ORDER BY co.year DESC, p.number ASC"
 	default:
-		query += " ORDER BY contest_year DESC, performance_number ASC"
+		query += " ORDER BY co.year DESC, p.number ASC"
 	}
 
 	rows, err := s.pool.Query(ctx, query, args...)
@@ -412,9 +390,13 @@ func (s *Storage) InsertMessage(ctx context.Context, msg *domain.Message) error 
 			contest_id,
 			user_id,
 			message,
-			created_at
+			created_at,
+			score,
+			old_score,
+			comment,
+			gif
 		)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 	_, err := s.pool.Exec(
 		ctx,
@@ -425,6 +407,10 @@ func (s *Storage) InsertMessage(ctx context.Context, msg *domain.Message) error 
 		msg.UserID,
 		msg.Message,
 		msg.CreatedAt,
+		msg.Score,
+		msg.OldScore,
+		msg.Comment,
+		msg.Gif,
 	)
 	return err
 }
@@ -440,14 +426,14 @@ func (s *Storage) GetMessages(ctx context.Context, contestID uuid.UUID) ([]domai
 			u.username,
 			c.name_ru,
 			c.flag_emogi,
-			s.score,
-			s.comment,
-			s.gif_url
+			m.score,
+			m.old_score,
+			m.comment,
+			m.gif
 		FROM messages m
 			JOIN users u on u.id = m.user_id
 			LEFT JOIN performance p on p.id = m.performance_id 
 			LEFT JOIN countries c on c.id = p.country_id
-			LEFT JOIN scores s on s.user_id = m.user_id and s.performance_id = m.performance_id
  		WHERE m.contest_id = $1
 		ORDER BY created_at ASC
 	`
@@ -472,6 +458,7 @@ func (s *Storage) GetMessages(ctx context.Context, contestID uuid.UUID) ([]domai
 			&m.Country,
 			&m.CountryFlag,
 			&m.Score,
+			&m.OldScore,
 			&m.Comment,
 			&m.Gif,
 		); err != nil {
