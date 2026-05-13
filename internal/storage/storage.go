@@ -386,19 +386,41 @@ func (s *Storage) GetCountries(ctx context.Context) ([]domain.Country, error) {
 	return res, nil
 }
 
+func (s *Storage) GetCountryByPerformance(ctx context.Context, performanceID uuid.UUID) (*domain.Country, error) {
+	rows := s.pool.QueryRow(ctx, `
+		select c.id, c.name_ru, c.flag_emogi 
+		from countries c
+			join performance p on p.country_id = c.id
+		where p.id = $1
+		`,
+		performanceID,
+	)
+
+	var c domain.Country
+	if err := rows.Scan(&c.ID, &c.NameRU, &c.FlagEmoji); err != nil {
+		return nil, err
+	}
+
+	return &c, nil
+}
+
 func (s *Storage) InsertMessage(ctx context.Context, msg *domain.Message) error {
 	query := `
 		INSERT INTO messages (
+			type,
+			performance_id,
 			contest_id,
 			user_id,
 			message,
 			created_at
 		)
-		VALUES ($1, $2, $3, $4)
+		VALUES ($1, $2, $3, $4, $5, $6)
 	`
 	_, err := s.pool.Exec(
 		ctx,
 		query,
+		msg.Type,
+		msg.PerformanceID,
 		msg.ContestID,
 		msg.UserID,
 		msg.Message,
@@ -410,14 +432,23 @@ func (s *Storage) InsertMessage(ctx context.Context, msg *domain.Message) error 
 func (s *Storage) GetMessages(ctx context.Context, contestID uuid.UUID) ([]domain.Message, error) {
 	query := `
 		SELECT 
+			COALESCE(m.type, ''),
 			m.contest_id,
 			m.user_id,
 			m.message,
 			m.created_at,
-			u.username
+			u.username,
+			c.name_ru,
+			c.flag_emogi,
+			s.score,
+			s.comment,
+			s.gif_url
 		FROM messages m
 			JOIN users u on u.id = m.user_id
-		WHERE contest_id = $1
+			LEFT JOIN performance p on p.id = m.performance_id 
+			LEFT JOIN countries c on c.id = p.country_id
+			LEFT JOIN scores s on s.user_id = m.user_id and s.performance_id = m.performance_id
+ 		WHERE m.contest_id = $1
 		ORDER BY created_at ASC
 	`
 	rows, err := s.pool.Query(ctx, query, contestID)
@@ -432,11 +463,17 @@ func (s *Storage) GetMessages(ctx context.Context, contestID uuid.UUID) ([]domai
 		var m domain.Message
 
 		if err := rows.Scan(
+			&m.Type,
 			&m.ContestID,
 			&m.UserID,
 			&m.Message,
 			&m.CreatedAt,
 			&m.Username,
+			&m.Country,
+			&m.CountryFlag,
+			&m.Score,
+			&m.Comment,
+			&m.Gif,
 		); err != nil {
 			return nil, err
 		}

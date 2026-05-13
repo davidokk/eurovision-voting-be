@@ -20,7 +20,7 @@ type Country struct {
 }
 
 type Contest struct {
-	ID     string    `json:"id"`
+	ID     uuid.UUID `json:"id"`
 	Type   string    `json:"type"`
 	Year   int       `json:"year"`
 	Starts time.Time `json:"starts"`
@@ -102,9 +102,16 @@ type Filters struct {
 }
 
 type Message struct {
-	UserID    uuid.UUID
-	ContestID uuid.UUID `json:"contestId"`
-	Username  string    `json:"username"`
-	Message   string    `json:"message"`
-	CreatedAt time.Time `json:"createdAt"`
+	UserID        uuid.UUID
+	PerformanceID uuid.UUID
+	ContestID     uuid.UUID `json:"contestId"`
+	Username      string    `json:"username"`
+	Message       string    `json:"message"`
+	CreatedAt     time.Time `json:"createdAt"`
+	Type          string    `json:"type"`
+	Gif           *string   `json:"gif"`
+	Country       *string   `json:"country"`
+	CountryFlag   *string   `json:"country_flag"`
+	Score         *int      `json:"score"`
+	Comment       *string   `json:"comment"`
 }

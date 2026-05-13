@@ -4,3 +4,6 @@ create table messages (
 	message text,
 	created_at TIMESTAMP WITH TIME ZONE
 );
+
+alter table messages add column type text;
+alter table messages add column performance_id uuid;

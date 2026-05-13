@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
 func (s *Service) GetContestView(ctx context.Context, contestID uuid.UUID) (*domain.ContestView, error) {
@@ -37,7 +38,42 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 	if time.Now().Before(c.Starts) || time.Now().After(c.Ends) {
 		return ErrContestClosed
 	}
-	return s.storage.RatePerformance(ctx, userID, performanceID, score, comment, gif)
+	if err := s.storage.RatePerformance(ctx, userID, performanceID, score, comment, gif); err != nil {
+		return err
+	}
+	if err := s.storage.InsertMessage(ctx, &domain.Message{
+		Type:          "system",
+		UserID:        userID,
+		PerformanceID: performanceID,
+		CreatedAt:     time.Now(),
+		ContestID:     c.ID,
+	}); err != nil {
+		log.Error().Err(err).Msg("cannot insert score message")
+	}
+	country, err := s.storage.GetCountryByPerformance(ctx, performanceID)
+	if err != nil {
+		log.Error().Err(err).Msg("cannot get country")
+		return nil 
+	}
+	u, err := s.storage.GetUser(ctx, userID)
+	if err != nil {
+		log.Error().Err(err).Msg("cannot get user")
+		return nil 
+	}
+	s.broadcastMessage(&domain.Message{
+		Type: "system",
+		UserID: userID,
+		Username: u.Username,
+		ContestID: c.ID,
+		PerformanceID: performanceID,
+		CreatedAt: time.Now(),
+		Score: &score,
+		Gif: &gif,
+		Comment: &comment,
+		Country: &country.NameRU,
+		CountryFlag: &country.FlagEmoji,
+	})
+	return nil
 }
 
 func (s *Service) UpdatePerformance(ctx context.Context, id uuid.UUID, qualified bool, link string) error {
