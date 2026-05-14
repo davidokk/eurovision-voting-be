@@ -49,15 +49,15 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 		PerformanceID: performanceID,
 		CreatedAt:     time.Now(),
 		ContestID:     c.ID,
-		OldScore:      func () *int {
+		OldScore: func() *int {
 			if oldScore == 0 {
-				return nil 
+				return nil
 			}
 			return &oldScore
 		}(),
-		Score:         &score,
-		Comment:       &comment,
-		Gif:           &gif,
+		Score:   &score,
+		Comment: &comment,
+		Gif:     &gif,
 	}); err != nil {
 		log.Error().Err(err).Msg("cannot insert score message")
 	}
@@ -83,6 +83,12 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 		Comment:       &comment,
 		Country:       &country.NameRU,
 		CountryFlag:   &country.FlagEmoji,
+		OldScore: func() *int {
+			if (oldScore == 0) {
+				return nil
+			}
+			return &oldScore
+		}(),
 	})
 	return nil
 }
