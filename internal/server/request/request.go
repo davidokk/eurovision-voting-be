@@ -80,6 +80,7 @@ type UpdatePerformanceRequest struct {
 	PerformanceID uuid.UUID
 	Qualified     bool   `json:"qualified"`
 	YoutubeLink   string `json:"youtube_link"`
+	Place         int    `json:"place"`
 }
 
 func (r *UpdatePerformanceRequest) Bind(req *http.Request) error {
@@ -166,9 +167,9 @@ func (r *SendMessageRequest) Bind(req *http.Request) error {
 	r.ContestID, err = uuid.Parse(ci)
 	if err != nil {
 		return fmt.Errorf("contest_id: %w", err)
-	} 
+	}
 	r.Message = req.URL.Query().Get("message")
-	return nil 
+	return nil
 }
 
 func (r *SendMessageRequest) Validate() error {

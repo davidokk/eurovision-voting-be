@@ -62,6 +62,7 @@ type PerformanceWithScores struct {
 	Scores        []ScoreView `json:"scores"`
 	TotalScore    float64     `json:"total_score"`
 	Qualified     bool        `json:"qualified"`
+	Place         *int        `json:"place"`
 }
 
 type ContestParticipantView struct {
@@ -85,6 +86,8 @@ type ScoreFiltered struct {
 	GifURL      *string
 	Song        string
 	Artist      string
+	Qualified   *bool
+	Place       *int
 }
 
 type SortType int

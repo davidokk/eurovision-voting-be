@@ -142,6 +142,7 @@ func (s *Storage) GetContestView(ctx context.Context, contestID uuid.UUID) (*dom
 						'song', p.song,
 						'number', p.number,
 						'youtube_link', p.youtube_link,
+						'place', p.place,
 
 						'total_score', COALESCE(s.total_score, 0),
 
@@ -248,10 +249,15 @@ func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uui
 	return old, nil
 }
 
-func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID, qualified bool, link string) error {
-	_, err := s.pool.Exec(
-		ctx, "update performance set qualified = $1, youtube_link = $2 where id = $3",
-		qualified, link, performanceID,
+func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID, qualified bool, link string, place int) error {
+	_, err := s.pool.Exec(ctx, `
+		update performance 
+		set 
+			qualified = $1, 
+			youtube_link = $2,
+			place = $3 
+		where id = $4
+		`, qualified, link, place, performanceID,
 	)
 	return err
 }
@@ -273,7 +279,9 @@ func (s *Storage) GetScoresFiltered(ctx context.Context, f domain.Filters) ([]do
         p.youtube_link as youtube_link,
         sc.gif_url,
         p.song as song,
-        p.artist as artist
+        p.artist as artist,
+		p.qualified as qualified,
+		p.place
     FROM scores sc
     JOIN users u ON u.id = sc.user_id
     JOIN performance p ON p.id = sc.performance_id
@@ -337,6 +345,8 @@ func (s *Storage) GetScoresFiltered(ctx context.Context, f domain.Filters) ([]do
 			&r.GifURL,
 			&r.Song,
 			&r.Artist,
+			&r.Qualified,
+			&r.Place,
 		)
 		if err != nil {
 			return nil, err

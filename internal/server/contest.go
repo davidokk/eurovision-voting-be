@@ -83,7 +83,7 @@ func (s *Server) updatePerformance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.service.UpdatePerformance(r.Context(), req.PerformanceID, req.Qualified, req.YoutubeLink); err != nil {
+	if err := s.service.UpdatePerformance(r.Context(), req.PerformanceID, req.Qualified, req.YoutubeLink, req.Place); err != nil {
 		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
