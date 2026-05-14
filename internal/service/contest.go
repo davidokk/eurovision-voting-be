@@ -49,7 +49,12 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 		PerformanceID: performanceID,
 		CreatedAt:     time.Now(),
 		ContestID:     c.ID,
-		OldScore:      &oldScore,
+		OldScore:      func () *int {
+			if oldScore == 0 {
+				return nil 
+			}
+			return &oldScore
+		}(),
 		Score:         &score,
 		Comment:       &comment,
 		Gif:           &gif,
