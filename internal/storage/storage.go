@@ -244,7 +244,7 @@ func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uui
 	row := s.pool.QueryRow(ctx, query, userID, performanceID, score, comment, gif)
 	var old int 
 	if err := row.Scan(&old); err != nil {
-		return 0, err
+		return 0, nil
 	}
 	return old, nil
 }
