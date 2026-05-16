@@ -13,11 +13,13 @@ import (
 )
 
 const (
-	wsReadLimit = 512 * 1024
-	wsPongWait  = 60 * time.Second
+	wsReadLimit   = 512 * 1024
+	wsPongWait    = 90 * time.Second
+	wsPingPeriod  = 30 * time.Second
+	wsWriteWait   = 10 * time.Second
 )
 
-// ServeConn регистрирует соединение и read-петлю: pong по deadline и JSON {"type":"ping"} → {"type":"pong"}.
+// ServeConn регистрирует соединение, read/write pumps, ping/pong.
 func (s *Service) ServeConn(userID uuid.UUID, conn *websocket.Conn) {
 	s.mu.Lock()
 	if old, ok := s.userConns[userID]; ok && old != nil {
@@ -33,7 +35,29 @@ func (s *Service) ServeConn(userID uuid.UUID, conn *websocket.Conn) {
 		return nil
 	})
 
+	go s.writePump(userID, conn)
 	go s.readPump(userID, conn)
+}
+
+func (s *Service) writePump(userID uuid.UUID, conn *websocket.Conn) {
+	ticker := time.NewTicker(wsPingPeriod)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.mu.RLock()
+		cur, ok := s.userConns[userID]
+		s.mu.RUnlock()
+		if !ok || cur != conn {
+			return
+		}
+
+		_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+		if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			log.Debug().Err(err).Str("user", userID.String()).Msg("ws server ping failed")
+			_ = conn.Close()
+			return
+		}
+	}
 }
 
 func (s *Service) readPump(userID uuid.UUID, conn *websocket.Conn) {
@@ -55,13 +79,15 @@ func (s *Service) readPump(userID uuid.UUID, conn *websocket.Conn) {
 			return
 		}
 
+		_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+
 		if messageType == websocket.TextMessage {
 			var m map[string]any
 			if json.Unmarshal(data, &m) != nil {
 				continue
 			}
 			if t, _ := m["type"].(string); t == "ping" {
-				_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 				if err := conn.WriteJSON(map[string]string{"type": "pong"}); err != nil {
 					return
 				}
@@ -71,20 +97,25 @@ func (s *Service) readPump(userID uuid.UUID, conn *websocket.Conn) {
 }
 
 func (s *Service) broadcastMessage(msg *domain.Message) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	log.Info().Int("users", len(s.userConns)).Msg("broadcast")
+	var stale []uuid.UUID
 	for userID, conn := range s.userConns {
 		if err := conn.WriteJSON(msg); err != nil {
+			stale = append(stale, userID)
 			if websocket.IsCloseError(err,
 				websocket.CloseGoingAway,
 				websocket.CloseNormalClosure) {
 				log.Debug().Err(err).Str("user", userID.String()).Msg("conn closed on broadcast")
 			} else {
-				log.Error().Err(err).Msg("broadcast message")
+				log.Error().Err(err).Str("user", userID.String()).Msg("broadcast message")
 			}
+			_ = conn.Close()
 		}
+	}
+	for _, id := range stale {
+		delete(s.userConns, id)
 	}
 }
 
