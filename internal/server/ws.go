@@ -23,8 +23,15 @@ func (s *Server) serveWS() http.HandlerFunc {
 			return
 		}
 
-		log.Info().Msg("serve conn")
-		s.service.ServeConn(uuid.New(), conn)
+		userID := uuid.New()
+		if tok := r.URL.Query().Get("token"); tok != "" {
+			if claims, err := s.jwt.ParseToken(tok); err == nil {
+				userID = claims.UserID
+			}
+		}
+
+		log.Info().Str("user", userID.String()).Msg("serve conn")
+		s.service.ServeConn(userID, conn)
 	}
 
 }

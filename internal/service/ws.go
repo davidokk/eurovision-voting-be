@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"eurovision-voting/internal/domain"
 	"fmt"
 	"time"
@@ -11,24 +12,79 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	wsReadLimit = 512 * 1024
+	wsPongWait  = 60 * time.Second
+)
+
+// ServeConn регистрирует соединение и read-петлю: pong по deadline и JSON {"type":"ping"} → {"type":"pong"}.
 func (s *Service) ServeConn(userID uuid.UUID, conn *websocket.Conn) {
+	s.mu.Lock()
+	if old, ok := s.userConns[userID]; ok && old != nil {
+		_ = old.Close()
+	}
 	s.userConns[userID] = conn
+	s.mu.Unlock()
+
+	conn.SetReadLimit(wsReadLimit)
+	_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(wsPongWait))
+		return nil
+	})
+
+	go s.readPump(userID, conn)
+}
+
+func (s *Service) readPump(userID uuid.UUID, conn *websocket.Conn) {
+	defer func() {
+		_ = conn.Close()
+		s.mu.Lock()
+		if cur, ok := s.userConns[userID]; ok && cur == conn {
+			delete(s.userConns, userID)
+		}
+		s.mu.Unlock()
+	}()
+
+	for {
+		messageType, data, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+				log.Debug().Err(err).Str("user", userID.String()).Msg("ws read end")
+			}
+			return
+		}
+
+		if messageType == websocket.TextMessage {
+			var m map[string]any
+			if json.Unmarshal(data, &m) != nil {
+				continue
+			}
+			if t, _ := m["type"].(string); t == "ping" {
+				_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.WriteJSON(map[string]string{"type": "pong"}); err != nil {
+					return
+				}
+			}
+		}
+	}
 }
 
 func (s *Service) broadcastMessage(msg *domain.Message) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	log.Info().Int("users", len(s.userConns)).Msg("broadcast")
 	for userID, conn := range s.userConns {
 		if err := conn.WriteJSON(msg); err != nil {
 			if websocket.IsCloseError(err,
 				websocket.CloseGoingAway,
 				websocket.CloseNormalClosure) {
-				delete(s.userConns, userID)
-				log.Error().Err(err).Msg("conn closed")
+				log.Debug().Err(err).Str("user", userID.String()).Msg("conn closed on broadcast")
 			} else {
 				log.Error().Err(err).Msg("broadcast message")
 			}
 		}
-		log.Info().Msg("msg sent")
 	}
 }
 
