@@ -31,7 +31,7 @@ func (s *Server) serveWS() http.HandlerFunc {
 		}
 
 		log.Info().Str("user", userID.String()).Msg("serve conn")
-		s.service.ServeConn(userID, conn)
+		s.service.ServeConn(uuid.New(), conn)
 	}
 
 }
