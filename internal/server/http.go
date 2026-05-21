@@ -55,6 +55,13 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 			r.With(s.AuthMiddleware).Get("/validate", func(w http.ResponseWriter, r *http.Request) {})
 		})
 
+		r.Route("/user", func(r chi.Router) {
+			r.With(s.AuthMiddleware).Get("/me", s.getMe)
+			r.Get("/public", s.getUserPublic)
+		})
+
+		r.With(s.AuthMiddleware).Post("/media/upload", s.uploadMedia)
+
 		r.Route("/contest", func(r chi.Router) {
 			r.Get("/", s.getContestsByYearHandler)
 			r.Get("/{id}", s.getContestViewHandler)
@@ -92,8 +99,8 @@ func (s *Server) serve(ctx context.Context, addr string, h http.Handler) error {
 	server := http.Server{
 		Addr:         addr,
 		Handler:      h,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 5 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
 	}
 
 	errCh := make(chan error)

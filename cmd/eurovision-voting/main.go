@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	jwtSvc "eurovision-voting/internal/jwt"
+	"eurovision-voting/internal/media"
 	"eurovision-voting/internal/server"
 	"eurovision-voting/internal/service"
 	"eurovision-voting/internal/storage"
@@ -44,15 +45,20 @@ func main() {
 		log.Fatal().Err(err).Msg("create storage")
 	}
 
-	service := service.New(storage, jwt)
+	s3, err := media.NewS3FromEnv(ctx)
+	if err != nil {
+		log.Fatal().Err(err).Msg("create S3")
+	}
 
-	server := server.New(service, jwt)
+	svc := service.New(storage, jwt, s3)
+
+	srv := server.New(svc, jwt)
 
 	wg := sync.WaitGroup{}
 
 	wg.Go(func() {
 		log.Info().Msgf("Starting public server at: %s", defaultAddrPublic)
-		if err := server.ServePublic(ctx, defaultAddrPublic); err != nil {
+		if err := srv.ServePublic(ctx, defaultAddrPublic); err != nil {
 			log.Error().Err(err).Msg("Could not serve public endpoints.")
 		}
 	})

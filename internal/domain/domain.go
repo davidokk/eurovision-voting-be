@@ -11,6 +11,21 @@ type User struct {
 	Username       string
 	HashedPassword string
 	Role           *string
+	AvatarURL      *string `json:"avatar_url,omitempty"`
+}
+
+type UserPublic struct {
+	ID        string  `json:"id"`
+	Username  string  `json:"username"`
+	AvatarURL *string `json:"avatar_url,omitempty"`
+}
+
+type MessageReplyPreview struct {
+	ID          string  `json:"id"`
+	Username    string  `json:"username"`
+	Message     string  `json:"message"`
+	ContentType string  `json:"contentType"`
+	MediaURL    *string `json:"mediaUrl,omitempty"`
 }
 
 type Country struct {
@@ -105,17 +120,24 @@ type Filters struct {
 }
 
 type Message struct {
-	UserID        uuid.UUID
-	PerformanceID uuid.UUID
-	ContestID     uuid.UUID `json:"contestId"`
-	Username      string    `json:"username"`
-	Message       string    `json:"message"`
-	CreatedAt     time.Time `json:"createdAt"`
-	Type          string    `json:"type"`
-	Gif           *string   `json:"gif"`
-	Country       *string   `json:"country"`
-	CountryFlag   *string   `json:"country_flag"`
-	Score         *int      `json:"score"`
-	OldScore      *int      `json:"old_score"`
-	Comment       *string   `json:"comment"`
+	ID              uuid.UUID  `json:"id"`
+	UserID          uuid.UUID  `json:"-"`
+	PerformanceID   uuid.UUID  `json:"-"`
+	ContestID       uuid.UUID  `json:"contestId"`
+	Username        string     `json:"username"`
+	Message         string     `json:"message"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	Type            string     `json:"type"`
+	ContentType     string     `json:"contentType"`
+	MediaURL        *string    `json:"mediaUrl,omitempty"`
+	MediaDurationMs *int       `json:"mediaDurationMs,omitempty"`
+	ReplyToID       *uuid.UUID `json:"-"`
+	ReplyTo         *MessageReplyPreview `json:"replyTo,omitempty"`
+	AvatarURL       *string    `json:"avatarUrl,omitempty"`
+	Gif             *string    `json:"gif,omitempty"`
+	Country         *string    `json:"country,omitempty"`
+	CountryFlag     *string    `json:"country_flag,omitempty"`
+	Score           *int       `json:"score,omitempty"`
+	OldScore        *int       `json:"old_score,omitempty"`
+	Comment         *string    `json:"comment,omitempty"`
 }

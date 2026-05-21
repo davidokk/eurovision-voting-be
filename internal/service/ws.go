@@ -125,9 +125,19 @@ func (s *Service) SendMessage(ctx context.Context, msg *domain.Message) error {
 		return fmt.Errorf("get user: %w", err)
 	}
 	msg.Username = user.Username
+	msg.AvatarURL = user.AvatarURL
 	msg.CreatedAt = time.Now()
+	if msg.ContentType == "" {
+		msg.ContentType = "text"
+	}
+	if msg.ID == uuid.Nil {
+		msg.ID = uuid.New()
+	}
 	if err := s.storage.InsertMessage(ctx, msg); err != nil {
 		return fmt.Errorf("insert message: %w", err)
+	}
+	if err := s.storage.FillReplyPreview(ctx, msg); err != nil {
+		log.Warn().Err(err).Str("message", msg.ID.String()).Msg("reply preview")
 	}
 	s.broadcastMessage(msg)
 	return nil

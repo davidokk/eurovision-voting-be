@@ -45,6 +45,7 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 	}
 	if err := s.storage.InsertMessage(ctx, &domain.Message{
 		Type:          "system",
+		ContentType:   "text",
 		UserID:        userID,
 		PerformanceID: performanceID,
 		CreatedAt:     time.Now(),

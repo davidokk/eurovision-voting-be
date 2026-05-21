@@ -56,25 +56,30 @@ func (s *Storage) CreateUser(ctx context.Context, user *domain.User) error {
 }
 
 func (s *Storage) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
-	query := `select id, password, role from users where username = $1`
+	query := `select id, password, role, avatar_url from users where username = $1`
 	row := s.pool.QueryRow(ctx, query, username)
 	u := &domain.User{
 		Username: username,
 	}
-	if err := row.Scan(&u.ID, &u.HashedPassword, &u.Role); err != nil {
+	if err := row.Scan(&u.ID, &u.HashedPassword, &u.Role, &u.AvatarURL); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return u, nil
 }
 
 func (s *Storage) GetUser(ctx context.Context, id uuid.UUID) (*domain.User, error) {
-	query := `select id, username, password, role from users where id = $1`
+	query := `select id, username, password, role, avatar_url from users where id = $1`
 	row := s.pool.QueryRow(ctx, query, id)
 	u := &domain.User{}
-	if err := row.Scan(&u.ID, &u.Username, &u.HashedPassword, &u.Role); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.HashedPassword, &u.Role, &u.AvatarURL); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return u, nil
+}
+
+func (s *Storage) UpdateUserAvatar(ctx context.Context, userID uuid.UUID, avatarURL string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET avatar_url = $2 WHERE id = $1`, userID, avatarURL)
+	return err
 }
 
 func (s *Storage) GetContestList(ctx context.Context) ([]domain.Contest, error) {
@@ -393,26 +398,24 @@ func (s *Storage) GetCountryByPerformance(ctx context.Context, performanceID uui
 }
 
 func (s *Storage) InsertMessage(ctx context.Context, msg *domain.Message) error {
+	if msg.ID == uuid.Nil {
+		msg.ID = uuid.New()
+	}
 	query := `
 		INSERT INTO messages (
-			type,
-			performance_id,
-			contest_id,
-			user_id,
-			message,
-			created_at,
-			score,
-			old_score,
-			comment,
-			gif
+			id, type, performance_id, contest_id, user_id, message, created_at,
+			score, old_score, comment, gif,
+			reply_to_id, content_type, media_url, media_duration_ms
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		RETURNING id
 	`
-	_, err := s.pool.Exec(
+	return s.pool.QueryRow(
 		ctx,
 		query,
+		msg.ID,
 		msg.Type,
-		msg.PerformanceID,
+		nullUUID(msg.PerformanceID),
 		msg.ContestID,
 		msg.UserID,
 		msg.Message,
@@ -421,31 +424,79 @@ func (s *Storage) InsertMessage(ctx context.Context, msg *domain.Message) error 
 		msg.OldScore,
 		msg.Comment,
 		msg.Gif,
-	)
-	return err
+		msg.ReplyToID,
+		msg.ContentType,
+		msg.MediaURL,
+		msg.MediaDurationMs,
+	).Scan(&msg.ID)
+}
+
+func nullUUID(id uuid.UUID) any {
+	if id == uuid.Nil {
+		return nil
+	}
+	return id
+}
+
+// FillReplyPreview подгружает превью родительского сообщения для WS/ответа API.
+func (s *Storage) FillReplyPreview(ctx context.Context, msg *domain.Message) error {
+	if msg.ReplyToID == nil || *msg.ReplyToID == uuid.Nil {
+		return nil
+	}
+	var parentUser, parentMsg, parentCT string
+	var parentMedia *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT pu.username, COALESCE(pm.message, ''), COALESCE(pm.content_type, 'text'), pm.media_url
+		FROM messages pm
+		JOIN users pu ON pu.id = pm.user_id
+		WHERE pm.id = $1
+	`, *msg.ReplyToID).Scan(&parentUser, &parentMsg, &parentCT, &parentMedia)
+	if err != nil {
+		return err
+	}
+	msg.ReplyTo = &domain.MessageReplyPreview{
+		ID:          msg.ReplyToID.String(),
+		Username:    parentUser,
+		Message:     parentMsg,
+		ContentType: parentCT,
+		MediaURL:    parentMedia,
+	}
+	return nil
 }
 
 func (s *Storage) GetMessages(ctx context.Context, contestID uuid.UUID) ([]domain.Message, error) {
 	query := `
 		SELECT 
+			m.id,
 			COALESCE(m.type, ''),
 			m.contest_id,
 			m.user_id,
 			m.message,
 			m.created_at,
 			u.username,
+			u.avatar_url,
 			c.name_ru,
 			c.flag_emogi,
 			m.score,
 			m.old_score,
 			m.comment,
-			m.gif
+			m.gif,
+			COALESCE(m.content_type, 'text'),
+			m.media_url,
+			m.media_duration_ms,
+			m.reply_to_id,
+			pu.username,
+			pm.message,
+			COALESCE(pm.content_type, 'text'),
+			pm.media_url
 		FROM messages m
-			JOIN users u on u.id = m.user_id
-			LEFT JOIN performance p on p.id = m.performance_id 
-			LEFT JOIN countries c on c.id = p.country_id
+			JOIN users u ON u.id = m.user_id
+			LEFT JOIN performance p ON p.id = m.performance_id 
+			LEFT JOIN countries c ON c.id = p.country_id
+			LEFT JOIN messages pm ON pm.id = m.reply_to_id
+			LEFT JOIN users pu ON pu.id = pm.user_id
  		WHERE m.contest_id = $1
-		ORDER BY created_at ASC
+		ORDER BY m.created_at ASC
 	`
 	rows, err := s.pool.Query(ctx, query, contestID)
 	if err != nil {
@@ -453,33 +504,60 @@ func (s *Storage) GetMessages(ctx context.Context, contestID uuid.UUID) ([]domai
 	}
 	defer rows.Close()
 
-	messages := []domain.Message{}
-
+	var messages []domain.Message
 	for rows.Next() {
 		var m domain.Message
+		var replyID *uuid.UUID
+		var parentUser, parentMsg, parentCT *string
+		var parentMedia *string
 
 		if err := rows.Scan(
+			&m.ID,
 			&m.Type,
 			&m.ContestID,
 			&m.UserID,
 			&m.Message,
 			&m.CreatedAt,
 			&m.Username,
+			&m.AvatarURL,
 			&m.Country,
 			&m.CountryFlag,
 			&m.Score,
 			&m.OldScore,
 			&m.Comment,
 			&m.Gif,
+			&m.ContentType,
+			&m.MediaURL,
+			&m.MediaDurationMs,
+			&replyID,
+			&parentUser,
+			&parentMsg,
+			&parentCT,
+			&parentMedia,
 		); err != nil {
 			return nil, err
 		}
+		m.ReplyToID = replyID
+		if replyID != nil && parentUser != nil {
+			m.ReplyTo = &domain.MessageReplyPreview{
+				ID:          replyID.String(),
+				Username:    *parentUser,
+				Message:     strVal(parentMsg),
+				ContentType: strVal(parentCT),
+				MediaURL:    parentMedia,
+			}
+		}
+		if m.ContentType == "" {
+			m.ContentType = "text"
+		}
 		messages = append(messages, m)
 	}
+	return messages, rows.Err()
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
+func strVal(p *string) string {
+	if p == nil {
+		return ""
 	}
-
-	return messages, nil
+	return *p
 }

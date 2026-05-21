@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi"
 	"github.com/google/uuid"
@@ -157,11 +158,21 @@ func (r *GetScoresFilteredRequest) Validate() error {
 }
 
 type SendMessageRequest struct {
-	ContestID uuid.UUID
-	Message   string
+	ContestID       uuid.UUID  `json:"contest_id"`
+	Message         string     `json:"message"`
+	ContentType     string     `json:"content_type"`
+	MediaURL        *string    `json:"media_url"`
+	MediaDurationMs *int       `json:"media_duration_ms"`
+	ReplyToID       *uuid.UUID `json:"reply_to_id"`
 }
 
 func (r *SendMessageRequest) Bind(req *http.Request) error {
+	if req.Header.Get("Content-Type") == "application/json" || req.ContentLength > 0 {
+		if err := json.NewDecoder(req.Body).Decode(r); err != nil {
+			return err
+		}
+		return nil
+	}
 	ci := req.URL.Query().Get("contest_id")
 	var err error
 	r.ContestID, err = uuid.Parse(ci)
@@ -169,12 +180,30 @@ func (r *SendMessageRequest) Bind(req *http.Request) error {
 		return fmt.Errorf("contest_id: %w", err)
 	}
 	r.Message = req.URL.Query().Get("message")
+	r.ContentType = "text"
 	return nil
 }
 
 func (r *SendMessageRequest) Validate() error {
-	if r.Message == "" {
-		return fmt.Errorf("message empty")
+	if r.ContestID == uuid.Nil {
+		return fmt.Errorf("contest_id required")
+	}
+	ct := r.ContentType
+	if ct == "" {
+		ct = "text"
+		r.ContentType = ct
+	}
+	switch ct {
+	case "text":
+		if strings.TrimSpace(r.Message) == "" {
+			return fmt.Errorf("message empty")
+		}
+	case "voice", "video_note", "image":
+		if r.MediaURL == nil || *r.MediaURL == "" {
+			return fmt.Errorf("media_url required")
+		}
+	default:
+		return fmt.Errorf("invalid content_type")
 	}
 	return nil
 }
