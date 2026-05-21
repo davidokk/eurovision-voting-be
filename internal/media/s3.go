@@ -30,11 +30,6 @@ func NewS3FromEnv(ctx context.Context) (*S3, error) {
 	if region == "" {
 		region = "auto"
 	}
-	fmt.Println(
-		os.Getenv("S3_ENDPOINT"),
-			os.Getenv("AWS_ACCESS_KEY_ID"),
-			os.Getenv("AWS_SECRET_ACCESS_KEY"),
-	)
 	cfg, err := config.LoadDefaultConfig(ctx,
 		config.WithRegion(region),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(

@@ -13,6 +13,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const enableS3 = false
+
 type Server struct {
 	service      *service.Service
 	jwt          *jwt.Service
@@ -60,7 +62,9 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 			r.Get("/public", s.getUserPublic)
 		})
 
-		r.With(s.AuthMiddleware).Post("/media/upload", s.uploadMedia)
+		if enableS3 {
+			r.With(s.AuthMiddleware).Post("/media/upload", s.uploadMedia)
+		}
 
 		r.Route("/contest", func(r chi.Router) {
 			r.Get("/", s.getContestsByYearHandler)
