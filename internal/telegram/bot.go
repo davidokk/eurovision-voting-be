@@ -86,7 +86,7 @@ func (b *Bot) handleStart(ctx context.Context, msg *tgbotapi.Message) {
 		return
 	}
 
-	text := fmt.Sprintf("Ваш код для входа -\n\n<code>%s</code>", code)
+	text := fmt.Sprintf("Твой код для входа:\n<code>%s</code>", code)
 	out := tgbotapi.NewMessage(msg.Chat.ID, text)
 	out.ParseMode = "HTML"
 	if _, err := b.api.Send(out); err != nil {
