@@ -7,13 +7,16 @@ import (
 )
 
 type User struct {
-	ID              uuid.UUID
-	Username        string
-	Email           string
-	EmailVerifiedAt *time.Time
-	HashedPassword  string
-	Role            *string
-	AvatarURL       *string `json:"avatar_url,omitempty"`
+	ID                uuid.UUID
+	Username          string
+	Email             string
+	EmailVerifiedAt   *time.Time
+	TelegramID        *int64
+	TelegramUsername  *string
+	TelegramLinkedAt  *time.Time
+	HashedPassword    string
+	Role              *string
+	AvatarURL         *string `json:"avatar_url,omitempty"`
 }
 
 type UserPublic struct {
@@ -24,9 +27,26 @@ type UserPublic struct {
 
 type UserMe struct {
 	UserPublic
-	Email           string `json:"email"`
-	EmailVerified   bool   `json:"email_verified"`
-	NeedsEmailSetup bool   `json:"needs_email_setup"`
+	Email              string `json:"email"`
+	EmailVerified      bool   `json:"email_verified"`
+	NeedsEmailSetup    bool   `json:"needs_email_setup"`
+	TelegramLinked     bool   `json:"telegram_linked"`
+	TelegramUsername   string `json:"telegram_username,omitempty"`
+	NeedsTelegramSetup bool   `json:"needs_telegram_setup"`
+}
+
+type TelegramAuthSession struct {
+	ID               uuid.UUID
+	LinkToken        string
+	Purpose          string
+	Username         *string
+	UserID           *uuid.UUID
+	TelegramID       *int64
+	TelegramChatID   *int64
+	TelegramUsername *string
+	CodeHash         *string
+	ExpiresAt        time.Time
+	CodeSentAt       *time.Time
 }
 
 type AuthCode struct {

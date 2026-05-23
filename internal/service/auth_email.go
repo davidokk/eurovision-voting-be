@@ -37,12 +37,26 @@ func normalizeEmail(email string) (string, error) {
 	return email, nil
 }
 
+func (s *Service) IsTelegramLinked(u *domain.User) bool {
+	return u.TelegramID != nil && *u.TelegramID > 0
+}
+
 func (s *Service) IsEmailVerified(u *domain.User) bool {
+	if s.IsTelegramLinked(u) {
+		return true
+	}
 	return u.EmailVerifiedAt != nil && !strings.HasSuffix(u.Email, legacyPendingEmailSuffix)
 }
 
 func (s *Service) NeedsEmailSetup(u *domain.User) bool {
+	if s.IsTelegramLinked(u) {
+		return false
+	}
 	return strings.HasSuffix(u.Email, legacyPendingEmailSuffix) || u.EmailVerifiedAt == nil
+}
+
+func (s *Service) NeedsTelegramSetup(u *domain.User) bool {
+	return !s.IsTelegramLinked(u)
 }
 
 func (s *Service) UserMeFromUser(u *domain.User) domain.UserMe {
@@ -55,11 +69,18 @@ func (s *Service) UserMeFromUser(u *domain.User) domain.UserMe {
 	if strings.HasSuffix(email, legacyPendingEmailSuffix) {
 		email = ""
 	}
+	tgUser := ""
+	if u.TelegramUsername != nil {
+		tgUser = *u.TelegramUsername
+	}
 	return domain.UserMe{
-		UserPublic:      public,
-		Email:           email,
-		EmailVerified:   s.IsEmailVerified(u),
-		NeedsEmailSetup: s.NeedsEmailSetup(u),
+		UserPublic:         public,
+		Email:              email,
+		EmailVerified:      s.IsEmailVerified(u),
+		NeedsEmailSetup:    s.NeedsEmailSetup(u),
+		TelegramLinked:     s.IsTelegramLinked(u),
+		TelegramUsername:   tgUser,
+		NeedsTelegramSetup: s.NeedsTelegramSetup(u),
 	}
 }
 

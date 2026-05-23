@@ -44,31 +44,41 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 	return &Storage{pool: pool}, nil
 }
 
+const userSelectColumns = `
+	id, username, password, role, avatar_url,
+	coalesce(email, ''), email_verified_at,
+	telegram_id, telegram_username, telegram_linked_at
+`
+
 func (s *Storage) CreateUser(ctx context.Context, user *domain.User) error {
 	query := `
-		insert into users 
-			(id, created_at, username, password, email, email_verified_at)
+		insert into users
+			(id, created_at, username, password, email, email_verified_at,
+			 telegram_id, telegram_username, telegram_linked_at)
 		values
-			($1, $2, $3, $4, lower(trim($5)), $6)
+			($1, $2, $3, $4, lower(trim($5)), $6, $7, $8, $9)
 	`
-	_, err := s.pool.Exec(ctx, query, user.ID, time.Now(), user.Username, user.HashedPassword, user.Email, user.EmailVerifiedAt)
+	_, err := s.pool.Exec(ctx, query,
+		user.ID, time.Now(), user.Username, user.HashedPassword, user.Email, user.EmailVerifiedAt,
+		user.TelegramID, user.TelegramUsername, user.TelegramLinkedAt,
+	)
 	return err
 }
 
 func (s *Storage) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
-	query := `select id, username, password, role, avatar_url, coalesce(email, ''), email_verified_at from users where username = $1`
+	query := `select ` + userSelectColumns + ` from users where username = $1`
 	row := s.pool.QueryRow(ctx, query, username)
 	return scanUserRow(row, username)
 }
 
 func (s *Storage) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
-	query := `select id, username, password, role, avatar_url, coalesce(email, ''), email_verified_at from users where lower(trim(email)) = lower(trim($1))`
+	query := `select ` + userSelectColumns + ` from users where lower(trim(email)) = lower(trim($1))`
 	row := s.pool.QueryRow(ctx, query, email)
 	return scanUserRow(row, "")
 }
 
 func (s *Storage) GetUser(ctx context.Context, id uuid.UUID) (*domain.User, error) {
-	query := `select id, username, password, role, avatar_url, coalesce(email, ''), email_verified_at from users where id = $1`
+	query := `select ` + userSelectColumns + ` from users where id = $1`
 	row := s.pool.QueryRow(ctx, query, id)
 	return scanUserRow(row, "")
 }
@@ -76,11 +86,21 @@ func (s *Storage) GetUser(ctx context.Context, id uuid.UUID) (*domain.User, erro
 func scanUserRow(row interface {
 	Scan(dest ...any) error
 }, usernameFallback string) (*domain.User, error) {
+	return scanUserRowFull(row, usernameFallback)
+}
+
+func scanUserRowFull(row interface {
+	Scan(dest ...any) error
+}, usernameFallback ...string) (*domain.User, error) {
 	u := &domain.User{}
-	if usernameFallback != "" {
-		u.Username = usernameFallback
+	if len(usernameFallback) > 0 && usernameFallback[0] != "" {
+		u.Username = usernameFallback[0]
 	}
-	if err := row.Scan(&u.ID, &u.Username, &u.HashedPassword, &u.Role, &u.AvatarURL, &u.Email, &u.EmailVerifiedAt); err != nil {
+	if err := row.Scan(
+		&u.ID, &u.Username, &u.HashedPassword, &u.Role, &u.AvatarURL,
+		&u.Email, &u.EmailVerifiedAt,
+		&u.TelegramID, &u.TelegramUsername, &u.TelegramLinkedAt,
+	); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return u, nil

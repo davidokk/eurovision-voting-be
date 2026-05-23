@@ -8,6 +8,7 @@ import (
 	"eurovision-voting/internal/server"
 	"eurovision-voting/internal/service"
 	"eurovision-voting/internal/storage"
+	"eurovision-voting/internal/telegram"
 	"os"
 	"os/signal"
 	"sync"
@@ -52,11 +53,26 @@ func main() {
 	}
 
 	mailClient := mail.NewSMTPFromEnv()
-	svc := service.New(storage, jwt, s3, mailClient)
-
-	srv := server.New(svc, jwt)
+	signupAllowed := os.Getenv("SIGNUP_ALLOWED") != "0"
+	svc := service.New(storage, jwt, s3, mailClient, os.Getenv("TELEGRAM_BOT_USERNAME"), signupAllowed)
 
 	wg := sync.WaitGroup{}
+
+	if token := os.Getenv("TELEGRAM_BOT_TOKEN"); token != "" {
+		bot, err := telegram.NewBot(token, svc)
+		if err != nil {
+			log.Error().Err(err).Msg("telegram bot disabled")
+		} else {
+			svc.SetTelegramBotUsername(bot.Username())
+			wg.Go(func() {
+				bot.Run(ctx)
+			})
+		}
+	} else {
+		log.Warn().Msg("TELEGRAM_BOT_TOKEN not set — Telegram auth disabled")
+	}
+
+	srv := server.New(svc, jwt)
 
 	wg.Go(func() {
 		log.Info().Msgf("Starting public server at: %s", defaultAddrPublic)

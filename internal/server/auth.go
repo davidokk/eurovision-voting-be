@@ -182,6 +182,9 @@ func (s *Server) passwordResetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func mapAuthError(err error) (int, string) {
+	if status, code, ok := mapTelegramAuthError(err); ok {
+		return status, code
+	}
 	switch {
 	case errors.Is(err, service.ErrEmailTaken):
 		return http.StatusConflict, EmailTakenCode
@@ -195,6 +198,8 @@ func mapAuthError(err error) (int, string) {
 		return http.StatusBadRequest, ValidatationCode
 	case errors.Is(err, service.ErrEmailNotConfigured):
 		return http.StatusServiceUnavailable, EmailNotConfiguredCode
+	case errors.Is(err, service.ErrSignupClosed):
+		return http.StatusForbidden, SignupClosedCode
 	default:
 		return http.StatusInternalServerError, UnknownCode
 	}
@@ -212,6 +217,20 @@ func authErrorMessage(err error, code string) string {
 		return "Это имя пользователя уже занято."
 	case EmailNotConfiguredCode:
 		return "Отправка писем временно недоступна. Попробуйте позже."
+	case TelegramNotConfiguredCode:
+		return "Вход через Telegram временно недоступен. Попробуйте позже."
+	case TelegramRateLimitCode:
+		return "Слишком много кодов в Telegram. Подождите около часа."
+	case TelegramSessionInvalidCode:
+		return "Сессия устарела. Запросите новую ссылку на сайте."
+	case TelegramNotConnectedCode:
+		return "Сначала откройте бота по ссылке и дождитесь кода в Telegram."
+	case TelegramAlreadyLinkedCode:
+		return "Этот Telegram уже привязан к другому аккаунту."
+	case TelegramAccountNotFoundCode:
+		return "Аккаунт с этим Telegram не найден. Зарегистрируйтесь."
+	case SignupClosedCode:
+		return "Регистрация закрыта :( Возвращайся в следующем году!"
 	default:
 		return err.Error()
 	}

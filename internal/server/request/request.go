@@ -131,6 +131,40 @@ func (r *PasswordResetRequest) Validate() error {
 	return nil
 }
 
+type TelegramSignupStartRequest struct {
+	Username string `json:"username"`
+}
+
+func (r *TelegramSignupStartRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *TelegramSignupStartRequest) Validate() error {
+	if strings.TrimSpace(r.Username) == "" {
+		return fmt.Errorf("username is empty")
+	}
+	return nil
+}
+
+type TelegramConfirmRequest struct {
+	LinkToken string `json:"link_token"`
+	Code      string `json:"code"`
+}
+
+func (r *TelegramConfirmRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *TelegramConfirmRequest) Validate() error {
+	if strings.TrimSpace(r.LinkToken) == "" {
+		return fmt.Errorf("link_token is empty")
+	}
+	if strings.TrimSpace(r.Code) == "" {
+		return fmt.Errorf("code is empty")
+	}
+	return nil
+}
+
 type ChangeUsernameRequest struct {
 	Username string `json:"username"`
 }
