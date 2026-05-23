@@ -20,6 +20,19 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
 	EncodeJSONResponse(w, http.StatusOK, u)
 }
 
+func (s *Server) deleteAvatar(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getUserFromContext(r.Context())
+	if !ok {
+		EncodeJSONResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err := s.service.DeleteUserAvatar(r.Context(), userID); err != nil {
+		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	EncodeJSONResponse(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func (s *Server) getUserPublic(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.URL.Query().Get("id"))
 	if err != nil {

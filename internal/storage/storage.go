@@ -82,6 +82,11 @@ func (s *Storage) UpdateUserAvatar(ctx context.Context, userID uuid.UUID, avatar
 	return err
 }
 
+func (s *Storage) ClearUserAvatar(ctx context.Context, userID uuid.UUID) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET avatar_url = NULL WHERE id = $1`, userID)
+	return err
+}
+
 func (s *Storage) GetContestList(ctx context.Context) ([]domain.Contest, error) {
 	rows, err := s.pool.Query(ctx, "select id, year, type from contests order by type")
 	if err != nil {

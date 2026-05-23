@@ -79,3 +79,7 @@ func (s *Service) GetUserPublic(ctx context.Context, id uuid.UUID) (*domain.User
 func (s *Service) SetUserAvatar(ctx context.Context, userID uuid.UUID, url string) error {
 	return s.storage.UpdateUserAvatar(ctx, userID, url)
 }
+
+func (s *Service) DeleteUserAvatar(ctx context.Context, userID uuid.UUID) error {
+	return s.storage.ClearUserAvatar(ctx, userID)
+}

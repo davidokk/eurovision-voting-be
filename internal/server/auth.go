@@ -6,9 +6,15 @@ import (
 	"eurovision-voting/internal/server/response"
 	"eurovision-voting/internal/service"
 	"net/http"
+	"os"
 )
 
 func (s *Server) signupHandler(w http.ResponseWriter, r *http.Request) {
+	if os.Getenv("SIGNUP_ALLOWED") == "0" {
+		w.WriteHeader(http.StatusForbidden)
+		return 
+	}
+	
 	var req request.SingUpRequest
 	if err := req.Bind(r); err != nil {
 		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
