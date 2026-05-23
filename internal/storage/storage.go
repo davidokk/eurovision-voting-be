@@ -46,20 +46,19 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 
 const userSelectColumns = `
 	id, username, password, role, avatar_url,
-	coalesce(email, ''), email_verified_at,
 	telegram_id, telegram_username, telegram_linked_at
 `
 
 func (s *Storage) CreateUser(ctx context.Context, user *domain.User) error {
 	query := `
 		insert into users
-			(id, created_at, username, password, email, email_verified_at,
+			(id, created_at, username, password,
 			 telegram_id, telegram_username, telegram_linked_at)
 		values
-			($1, $2, $3, $4, lower(trim($5)), $6, $7, $8, $9)
+			($1, $2, $3, $4, $5, $6, $7)
 	`
 	_, err := s.pool.Exec(ctx, query,
-		user.ID, time.Now(), user.Username, user.HashedPassword, user.Email, user.EmailVerifiedAt,
+		user.ID, time.Now(), user.Username, user.HashedPassword,
 		user.TelegramID, user.TelegramUsername, user.TelegramLinkedAt,
 	)
 	return err
@@ -69,12 +68,6 @@ func (s *Storage) GetUserByUsername(ctx context.Context, username string) (*doma
 	query := `select ` + userSelectColumns + ` from users where username = $1`
 	row := s.pool.QueryRow(ctx, query, username)
 	return scanUserRow(row, username)
-}
-
-func (s *Storage) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
-	query := `select ` + userSelectColumns + ` from users where lower(trim(email)) = lower(trim($1))`
-	row := s.pool.QueryRow(ctx, query, email)
-	return scanUserRow(row, "")
 }
 
 func (s *Storage) GetUser(ctx context.Context, id uuid.UUID) (*domain.User, error) {
@@ -98,30 +91,11 @@ func scanUserRowFull(row interface {
 	}
 	if err := row.Scan(
 		&u.ID, &u.Username, &u.HashedPassword, &u.Role, &u.AvatarURL,
-		&u.Email, &u.EmailVerifiedAt,
 		&u.TelegramID, &u.TelegramUsername, &u.TelegramLinkedAt,
 	); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return u, nil
-}
-
-func (s *Storage) UpdateUserEmail(ctx context.Context, userID uuid.UUID, email string, verified bool) error {
-	if verified {
-		_, err := s.pool.Exec(ctx, `
-			UPDATE users SET email = lower(trim($2)), email_verified_at = now() WHERE id = $1
-		`, userID, email)
-		return err
-	}
-	_, err := s.pool.Exec(ctx, `
-		UPDATE users SET email = lower(trim($2)), email_verified_at = NULL WHERE id = $1
-	`, userID, email)
-	return err
-}
-
-func (s *Storage) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET password = $2 WHERE id = $1`, userID, passwordHash)
-	return err
 }
 
 func (s *Storage) UpdateUsername(ctx context.Context, userID uuid.UUID, username string) error {
@@ -134,29 +108,6 @@ func (s *Storage) IsUsernameTaken(ctx context.Context, username string, excludeU
 	err := s.pool.QueryRow(ctx, `
 		SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 AND id <> $2)
 	`, username, excludeUserID).Scan(&exists)
-	return exists, err
-}
-
-func (s *Storage) IsEmailTaken(ctx context.Context, email string, excludeUserID *uuid.UUID) (bool, error) {
-	var exists bool
-	if excludeUserID != nil {
-		err := s.pool.QueryRow(ctx, `
-			SELECT EXISTS(
-				SELECT 1 FROM users
-				WHERE lower(trim(email)) = lower(trim($1))
-				  AND id <> $2
-				  AND email NOT LIKE '%@legacy.pending'
-			)
-		`, email, *excludeUserID).Scan(&exists)
-		return exists, err
-	}
-	err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS(
-			SELECT 1 FROM users
-			WHERE lower(trim(email)) = lower(trim($1))
-			  AND email NOT LIKE '%@legacy.pending'
-		)
-	`, email).Scan(&exists)
 	return exists, err
 }
 

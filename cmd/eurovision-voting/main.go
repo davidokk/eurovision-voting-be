@@ -2,8 +2,7 @@ package main
 
 import (
 	"context"
-	jwtSvc 	"eurovision-voting/internal/jwt"
-	"eurovision-voting/internal/mail"
+	jwtSvc "eurovision-voting/internal/jwt"
 	"eurovision-voting/internal/media"
 	"eurovision-voting/internal/server"
 	"eurovision-voting/internal/service"
@@ -52,9 +51,8 @@ func main() {
 		log.Fatal().Err(err).Msg("create S3")
 	}
 
-	mailClient := mail.NewSMTPFromEnv()
 	signupAllowed := os.Getenv("SIGNUP_ALLOWED") != "0"
-	svc := service.New(storage, jwt, s3, mailClient, os.Getenv("TELEGRAM_BOT_USERNAME"), signupAllowed)
+	svc := service.New(storage, jwt, s3, os.Getenv("TELEGRAM_BOT_USERNAME"), signupAllowed)
 
 	wg := sync.WaitGroup{}
 

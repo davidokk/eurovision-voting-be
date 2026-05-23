@@ -22,9 +22,8 @@ const (
 	telegramPurposeSignin = "signin"
 
 	telegramSessionTTL      = 15 * time.Minute
-	telegramRateLimitMax      = 5
+	telegramRateLimitMax      = 10
 	telegramRateLimitWindow = time.Hour
-	telegramSyntheticEmailFmt = "tg_%d@telegram.local"
 )
 
 var telegramUsernameSanitize = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
@@ -250,12 +249,9 @@ func (s *Service) createUserFromTelegramSession(ctx context.Context, sess *domai
 	}
 
 	now := time.Now()
-	email := fmt.Sprintf(telegramSyntheticEmailFmt, tgID)
 	user := &domain.User{
 		ID:               uuid.New(),
 		Username:         username,
-		Email:            email,
-		EmailVerifiedAt:  &now,
 		TelegramID:       &tgID,
 		TelegramUsername: sess.TelegramUsername,
 		TelegramLinkedAt: &now,

@@ -82,12 +82,7 @@ func (s *Storage) CountTelegramCodesSince(ctx context.Context, telegramID int64,
 }
 
 func (s *Storage) GetUserByTelegramID(ctx context.Context, telegramID int64) (*domain.User, error) {
-	query := `
-		SELECT id, username, password, role, avatar_url,
-		       coalesce(email, ''), email_verified_at,
-		       telegram_id, telegram_username, telegram_linked_at
-		FROM users WHERE telegram_id = $1
-	`
+	query := `select ` + userSelectColumns + ` from users where telegram_id = $1`
 	row := s.pool.QueryRow(ctx, query, telegramID)
 	return scanUserRowFull(row)
 }
@@ -97,8 +92,7 @@ func (s *Storage) LinkUserTelegram(ctx context.Context, userID uuid.UUID, telegr
 		UPDATE users
 		SET telegram_id = $2,
 		    telegram_username = $3,
-		    telegram_linked_at = now(),
-		    email_verified_at = COALESCE(email_verified_at, now())
+		    telegram_linked_at = now()
 		WHERE id = $1
 	`, userID, telegramID, nullIfEmpty(telegramUsername))
 	return err

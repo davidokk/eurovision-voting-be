@@ -7,16 +7,14 @@ import (
 )
 
 type User struct {
-	ID                uuid.UUID
-	Username          string
-	Email             string
-	EmailVerifiedAt   *time.Time
-	TelegramID        *int64
-	TelegramUsername  *string
-	TelegramLinkedAt  *time.Time
-	HashedPassword    string
-	Role              *string
-	AvatarURL         *string `json:"avatar_url,omitempty"`
+	ID               uuid.UUID
+	Username         string
+	TelegramID       *int64
+	TelegramUsername *string
+	TelegramLinkedAt *time.Time
+	HashedPassword   string
+	Role             *string
+	AvatarURL        *string `json:"avatar_url,omitempty"`
 }
 
 type UserPublic struct {
@@ -27,12 +25,8 @@ type UserPublic struct {
 
 type UserMe struct {
 	UserPublic
-	Email              string `json:"email"`
-	EmailVerified      bool   `json:"email_verified"`
-	NeedsEmailSetup    bool   `json:"needs_email_setup"`
-	TelegramLinked     bool   `json:"telegram_linked"`
-	TelegramUsername   string `json:"telegram_username,omitempty"`
-	NeedsTelegramSetup bool   `json:"needs_telegram_setup"`
+	TelegramLinked   bool   `json:"telegram_linked"`
+	TelegramUsername string `json:"telegram_username,omitempty"`
 }
 
 type TelegramAuthSession struct {
@@ -47,17 +41,6 @@ type TelegramAuthSession struct {
 	CodeHash         *string
 	ExpiresAt        time.Time
 	CodeSentAt       *time.Time
-}
-
-type AuthCode struct {
-	ID           uuid.UUID
-	Email        string
-	CodeHash     string
-	Purpose      string
-	UserID       *uuid.UUID
-	Username     *string
-	PasswordHash *string
-	ExpiresAt    time.Time
 }
 
 type MessageReplyPreview struct {
@@ -160,24 +143,24 @@ type Filters struct {
 }
 
 type Message struct {
-	ID              uuid.UUID  `json:"id"`
-	UserID          uuid.UUID  `json:"-"`
-	PerformanceID   uuid.UUID  `json:"-"`
-	ContestID       uuid.UUID  `json:"contestId"`
-	Username        string     `json:"username"`
-	Message         string     `json:"message"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	Type            string     `json:"type"`
-	ContentType     string     `json:"contentType"`
-	MediaURL        *string    `json:"mediaUrl,omitempty"`
-	MediaDurationMs *int       `json:"mediaDurationMs,omitempty"`
-	ReplyToID       *uuid.UUID `json:"-"`
+	ID              uuid.UUID            `json:"id"`
+	UserID          uuid.UUID            `json:"-"`
+	PerformanceID   uuid.UUID            `json:"-"`
+	ContestID       uuid.UUID            `json:"contestId"`
+	Username        string               `json:"username"`
+	Message         string               `json:"message"`
+	CreatedAt       time.Time            `json:"createdAt"`
+	Type            string               `json:"type"`
+	ContentType     string               `json:"contentType"`
+	MediaURL        *string              `json:"mediaUrl,omitempty"`
+	MediaDurationMs *int                 `json:"mediaDurationMs,omitempty"`
+	ReplyToID       *uuid.UUID           `json:"-"`
 	ReplyTo         *MessageReplyPreview `json:"replyTo,omitempty"`
-	AvatarURL       *string    `json:"avatarUrl,omitempty"`
-	Gif             *string    `json:"gif,omitempty"`
-	Country         *string    `json:"country,omitempty"`
-	CountryFlag     *string    `json:"country_flag,omitempty"`
-	Score           *int       `json:"score,omitempty"`
-	OldScore        *int       `json:"old_score,omitempty"`
-	Comment         *string    `json:"comment,omitempty"`
+	AvatarURL       *string              `json:"avatarUrl,omitempty"`
+	Gif             *string              `json:"gif,omitempty"`
+	Country         *string              `json:"country,omitempty"`
+	CountryFlag     *string              `json:"country_flag,omitempty"`
+	Score           *int                 `json:"score,omitempty"`
+	OldScore        *int                 `json:"old_score,omitempty"`
+	Comment         *string              `json:"comment,omitempty"`
 }

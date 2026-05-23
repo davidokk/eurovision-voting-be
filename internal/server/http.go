@@ -50,27 +50,20 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 
 	s.publicRouter.Route("/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/signup/start", s.signupStartHandler)
-			r.Post("/signup/confirm", s.signupConfirmHandler)
-			r.Post("/signin", s.signinHandler)
-			r.Post("/password/forgot", s.passwordForgotHandler)
-			r.Post("/password/reset", s.passwordResetHandler)
 			r.Post("/telegram/signin/start", s.telegramSigninStartHandler)
 			r.Post("/telegram/signin/confirm", s.telegramSigninConfirmHandler)
 			r.Get("/telegram/session", s.telegramSessionStatusHandler)
 			r.With(s.AuthMiddleware).Get("/validate", func(w http.ResponseWriter, r *http.Request) {})
-			r.With(s.AuthMiddleware).Post("/email/request", s.emailBindRequestHandler)
-			r.With(s.AuthMiddleware).Post("/email/confirm", s.emailBindConfirmHandler)
 		})
 
 		r.Route("/user", func(r chi.Router) {
 			r.With(s.AuthMiddleware).Get("/me", s.getMe)
-			r.With(s.AuthMiddleware).Patch("/username", s.changeUsernameHandler) // allowed before email verified
-			r.With(s.AuthMiddleware, s.VerifiedEmailMiddleware).Delete("/avatar", s.deleteAvatar)
+			r.With(s.AuthMiddleware).Patch("/username", s.changeUsernameHandler)
+			r.With(s.AuthMiddleware, s.VerifiedAccountMiddleware).Delete("/avatar", s.deleteAvatar)
 			r.Get("/public", s.getUserPublic)
 		})
 
-		r.With(s.AuthMiddleware, s.VerifiedEmailMiddleware).Post("/media/upload", s.uploadMedia)
+		r.With(s.AuthMiddleware, s.VerifiedAccountMiddleware).Post("/media/upload", s.uploadMedia)
 
 		r.Route("/contest", func(r chi.Router) {
 			r.Get("/", s.getContestsByYearHandler)
@@ -85,12 +78,12 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 			r.Get("/giphy/search", s.proxyGiphySearch)
 		})
 
-		r.With(s.AuthMiddleware, s.VerifiedEmailMiddleware).Post("/performance/{id}/rate", s.ratePerformance)
+		r.With(s.AuthMiddleware, s.VerifiedAccountMiddleware).Post("/performance/{id}/rate", s.ratePerformance)
 
 		r.Get("/ws", s.serveWS())
 
 		r.Route("/message", func(r chi.Router) {
-			r.With(s.AuthMiddleware, s.VerifiedEmailMiddleware).Post("/send", s.sendMessage)
+			r.With(s.AuthMiddleware, s.VerifiedAccountMiddleware).Post("/send", s.sendMessage)
 			r.Get("/", s.getMessages)
 		})
 	})
@@ -118,30 +111,24 @@ func (s *Server) serve(ctx context.Context, addr string, h http.Handler) error {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
+		close(errCh)
 	}(errCh)
 
 	select {
+	case <-ctx.Done():
+		log.Info().Msg("Shutting down server...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		return err
-	case <-ctx.Done():
-		log.Info().Msg("Server is interrupted. Exiting...")
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, 1*time.Minute)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		server.Close()
-	}
-
-	return nil
 }
 
-func EncodeJSONResponse[T any](w http.ResponseWriter, code int, data T) error {
+func EncodeJSONResponse(w http.ResponseWriter, status int, payload interface{}) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(code)
-	if code == http.StatusNoContent {
-		return nil
+	w.WriteHeader(status)
+	if payload != nil {
+		_ = json.NewEncoder(w).Encode(payload)
 	}
-
-	return json.NewEncoder(w).Encode(data)
 }

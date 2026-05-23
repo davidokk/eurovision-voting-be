@@ -40,7 +40,7 @@ func (s *Server) AuthMiddleware(next http.Handler) http.Handler {
 	}))
 }
 
-func (s *Server) VerifiedEmailMiddleware(next http.Handler) http.Handler {
+func (s *Server) VerifiedAccountMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
@@ -53,12 +53,12 @@ func (s *Server) VerifiedEmailMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}
-		if !claims.EmailVerified {
+		if !claims.IsVerified() {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.WriteHeader(http.StatusForbidden)
 			_ = json.NewEncoder(w).Encode(ApiError{
-				Err:  "email not verified",
-				Code: EmailNotVerifiedCode,
+				Err:  "account not verified",
+				Code: AccountNotVerifiedCode,
 			})
 			return
 		}
@@ -74,7 +74,7 @@ func setUserID(ctx context.Context, userID uuid.UUID) context.Context {
 
 func getUserFromContext(ctx context.Context) (uuid.UUID, bool) {
 	id, ok := ctx.Value(userIDCtxKey).(uuid.UUID)
-	return id, ok 
+	return id, ok
 }
 
 func (s *Server) CheckRoleMw(role string) func(http.Handler) http.Handler {
@@ -105,9 +105,9 @@ func (s *Server) CheckRoleMw(role string) func(http.Handler) http.Handler {
 			user, err := s.service.GetUserByUsername(r.Context(), claims.Username)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("cannot get user: %s", err.Error()), http.StatusInternalServerError)
-				return 
+				return
 			}
-			
+
 			if user.Role == nil || *user.Role != role {
 				http.Error(w, fmt.Sprintf("role %s required", role), http.StatusForbidden)
 				return
