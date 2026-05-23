@@ -3,6 +3,9 @@ package server
 import (
 	"net/http"
 
+	"eurovision-voting/internal/server/request"
+	"eurovision-voting/internal/server/response"
+
 	"github.com/google/uuid"
 )
 
@@ -12,12 +15,39 @@ func (s *Server) getMe(w http.ResponseWriter, r *http.Request) {
 		EncodeJSONResponse(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	u, err := s.service.GetUserPublic(r.Context(), userID)
+	u, err := s.service.GetUserMe(r.Context(), userID)
 	if err != nil {
 		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	EncodeJSONResponse(w, http.StatusOK, u)
+}
+
+func (s *Server) changeUsernameHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getUserFromContext(r.Context())
+	if !ok {
+		EncodeJSONResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req request.ChangeUsernameRequest
+	if err := req.Bind(r); err != nil {
+		EncodeJSONResponse(w, http.StatusBadRequest, ApiError{Err: err.Error(), Code: ValidatationCode})
+		return
+	}
+	if err := req.Validate(); err != nil {
+		EncodeJSONResponse(w, http.StatusBadRequest, ApiError{Err: err.Error(), Code: ValidatationCode})
+		return
+	}
+
+	token, err := s.service.ChangeUsername(r.Context(), userID, req.Username)
+	if err != nil {
+		status, code := mapAuthError(err)
+		EncodeJSONResponse(w, status, ApiError{Err: err.Error(), Code: code})
+		return
+	}
+
+	EncodeJSONResponse(w, http.StatusOK, response.AuthResponse{Token: token})
 }
 
 func (s *Server) deleteAvatar(w http.ResponseWriter, r *http.Request) {

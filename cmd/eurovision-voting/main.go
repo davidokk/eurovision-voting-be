@@ -2,7 +2,8 @@ package main
 
 import (
 	"context"
-	jwtSvc "eurovision-voting/internal/jwt"
+	jwtSvc 	"eurovision-voting/internal/jwt"
+	"eurovision-voting/internal/mail"
 	"eurovision-voting/internal/media"
 	"eurovision-voting/internal/server"
 	"eurovision-voting/internal/service"
@@ -50,7 +51,8 @@ func main() {
 		log.Fatal().Err(err).Msg("create S3")
 	}
 
-	svc := service.New(storage, jwt, s3)
+	mailClient := mail.NewSMTPFromEnv()
+	svc := service.New(storage, jwt, s3, mailClient)
 
 	srv := server.New(svc, jwt)
 

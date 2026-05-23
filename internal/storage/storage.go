@@ -47,34 +47,97 @@ func New(ctx context.Context, cfg Config) (*Storage, error) {
 func (s *Storage) CreateUser(ctx context.Context, user *domain.User) error {
 	query := `
 		insert into users 
-			(id, created_at, username, password)
+			(id, created_at, username, password, email, email_verified_at)
 		values
-			($1, $2, $3, $4)
+			($1, $2, $3, $4, lower(trim($5)), $6)
 	`
-	_, err := s.pool.Exec(ctx, query, user.ID, time.Now(), user.Username, user.HashedPassword)
+	_, err := s.pool.Exec(ctx, query, user.ID, time.Now(), user.Username, user.HashedPassword, user.Email, user.EmailVerifiedAt)
 	return err
 }
 
 func (s *Storage) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
-	query := `select id, password, role, avatar_url from users where username = $1`
+	query := `select id, username, password, role, avatar_url, coalesce(email, ''), email_verified_at from users where username = $1`
 	row := s.pool.QueryRow(ctx, query, username)
-	u := &domain.User{
-		Username: username,
+	return scanUserRow(row, username)
+}
+
+func (s *Storage) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
+	query := `select id, username, password, role, avatar_url, coalesce(email, ''), email_verified_at from users where lower(trim(email)) = lower(trim($1))`
+	row := s.pool.QueryRow(ctx, query, email)
+	return scanUserRow(row, "")
+}
+
+func (s *Storage) GetUser(ctx context.Context, id uuid.UUID) (*domain.User, error) {
+	query := `select id, username, password, role, avatar_url, coalesce(email, ''), email_verified_at from users where id = $1`
+	row := s.pool.QueryRow(ctx, query, id)
+	return scanUserRow(row, "")
+}
+
+func scanUserRow(row interface {
+	Scan(dest ...any) error
+}, usernameFallback string) (*domain.User, error) {
+	u := &domain.User{}
+	if usernameFallback != "" {
+		u.Username = usernameFallback
 	}
-	if err := row.Scan(&u.ID, &u.HashedPassword, &u.Role, &u.AvatarURL); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.HashedPassword, &u.Role, &u.AvatarURL, &u.Email, &u.EmailVerifiedAt); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return u, nil
 }
 
-func (s *Storage) GetUser(ctx context.Context, id uuid.UUID) (*domain.User, error) {
-	query := `select id, username, password, role, avatar_url from users where id = $1`
-	row := s.pool.QueryRow(ctx, query, id)
-	u := &domain.User{}
-	if err := row.Scan(&u.ID, &u.Username, &u.HashedPassword, &u.Role, &u.AvatarURL); err != nil {
-		return nil, fmt.Errorf("scan: %w", err)
+func (s *Storage) UpdateUserEmail(ctx context.Context, userID uuid.UUID, email string, verified bool) error {
+	if verified {
+		_, err := s.pool.Exec(ctx, `
+			UPDATE users SET email = lower(trim($2)), email_verified_at = now() WHERE id = $1
+		`, userID, email)
+		return err
 	}
-	return u, nil
+	_, err := s.pool.Exec(ctx, `
+		UPDATE users SET email = lower(trim($2)), email_verified_at = NULL WHERE id = $1
+	`, userID, email)
+	return err
+}
+
+func (s *Storage) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET password = $2 WHERE id = $1`, userID, passwordHash)
+	return err
+}
+
+func (s *Storage) UpdateUsername(ctx context.Context, userID uuid.UUID, username string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET username = $2 WHERE id = $1`, userID, username)
+	return err
+}
+
+func (s *Storage) IsUsernameTaken(ctx context.Context, username string, excludeUserID uuid.UUID) (bool, error) {
+	var exists bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 AND id <> $2)
+	`, username, excludeUserID).Scan(&exists)
+	return exists, err
+}
+
+func (s *Storage) IsEmailTaken(ctx context.Context, email string, excludeUserID *uuid.UUID) (bool, error) {
+	var exists bool
+	if excludeUserID != nil {
+		err := s.pool.QueryRow(ctx, `
+			SELECT EXISTS(
+				SELECT 1 FROM users
+				WHERE lower(trim(email)) = lower(trim($1))
+				  AND id <> $2
+				  AND email NOT LIKE '%@legacy.pending'
+			)
+		`, email, *excludeUserID).Scan(&exists)
+		return exists, err
+	}
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM users
+			WHERE lower(trim(email)) = lower(trim($1))
+			  AND email NOT LIKE '%@legacy.pending'
+		)
+	`, email).Scan(&exists)
+	return exists, err
 }
 
 func (s *Storage) UpdateUserAvatar(ctx context.Context, userID uuid.UUID, avatarURL string) error {

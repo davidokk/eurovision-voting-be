@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -37,6 +38,32 @@ func (s *Server) AuthMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}))
+}
+
+func (s *Server) VerifiedEmailMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			http.Error(w, "missing authorization header", http.StatusUnauthorized)
+			return
+		}
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		claims, err := s.jwt.ParseToken(tokenString)
+		if err != nil {
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+		if !claims.EmailVerified {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.WriteHeader(http.StatusForbidden)
+			_ = json.NewEncoder(w).Encode(ApiError{
+				Err:  "email not verified",
+				Code: EmailNotVerifiedCode,
+			})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 const userIDCtxKey = "user_id"

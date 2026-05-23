@@ -7,17 +7,37 @@ import (
 )
 
 type User struct {
-	ID             uuid.UUID
-	Username       string
-	HashedPassword string
-	Role           *string
-	AvatarURL      *string `json:"avatar_url,omitempty"`
+	ID              uuid.UUID
+	Username        string
+	Email           string
+	EmailVerifiedAt *time.Time
+	HashedPassword  string
+	Role            *string
+	AvatarURL       *string `json:"avatar_url,omitempty"`
 }
 
 type UserPublic struct {
 	ID        string  `json:"id"`
 	Username  string  `json:"username"`
 	AvatarURL *string `json:"avatar_url,omitempty"`
+}
+
+type UserMe struct {
+	UserPublic
+	Email           string `json:"email"`
+	EmailVerified   bool   `json:"email_verified"`
+	NeedsEmailSetup bool   `json:"needs_email_setup"`
+}
+
+type AuthCode struct {
+	ID           uuid.UUID
+	Email        string
+	CodeHash     string
+	Purpose      string
+	UserID       *uuid.UUID
+	Username     *string
+	PasswordHash *string
+	ExpiresAt    time.Time
 }
 
 type MessageReplyPreview struct {

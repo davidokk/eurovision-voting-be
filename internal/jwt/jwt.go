@@ -20,15 +20,17 @@ func NewJWTService(cfg Config) *Service {
 }
 
 type Claims struct {
-	UserID   uuid.UUID `json:"user_id"`
-	Username string    `json:"username"`
+	UserID        uuid.UUID `json:"user_id"`
+	Username      string    `json:"username"`
+	EmailVerified bool      `json:"email_verified"`
 	jwt.RegisteredClaims
 }
 
-func (s *Service) GenerateToken(userID uuid.UUID, username string) (string, error) {
+func (s *Service) GenerateToken(userID uuid.UUID, username string, emailVerified bool) (string, error) {
 	claims := Claims{
-		UserID: userID,
-		Username: username,
+		UserID:        userID,
+		Username:      username,
+		EmailVerified: emailVerified,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(
 				time.Now().Add(s.tokenExpiration),

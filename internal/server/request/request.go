@@ -13,16 +13,20 @@ import (
 	"github.com/google/uuid"
 )
 
-type SingUpRequest struct {
+type SignupStartRequest struct {
+	Email    string `json:"email"`
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-func (r *SingUpRequest) Bind(req *http.Request) error {
+func (r *SignupStartRequest) Bind(req *http.Request) error {
 	return json.NewDecoder(req.Body).Decode(r)
 }
 
-func (r *SingUpRequest) Validate() error {
+func (r *SignupStartRequest) Validate() error {
+	if r.Email == "" {
+		return fmt.Errorf("email is empty")
+	}
 	if r.Username == "" {
 		return fmt.Errorf("username is empty")
 	}
@@ -32,21 +36,112 @@ func (r *SingUpRequest) Validate() error {
 	return nil
 }
 
-type SingInRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+type SignupConfirmRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
 }
 
-func (r *SingInRequest) Bind(req *http.Request) error {
+func (r *SignupConfirmRequest) Bind(req *http.Request) error {
 	return json.NewDecoder(req.Body).Decode(r)
 }
 
-func (r *SingInRequest) Validate() error {
-	if r.Username == "" {
-		return fmt.Errorf("username is empty")
+func (r *SignupConfirmRequest) Validate() error {
+	if r.Email == "" {
+		return fmt.Errorf("email is empty")
+	}
+	if strings.TrimSpace(r.Code) == "" {
+		return fmt.Errorf("code is empty")
+	}
+	return nil
+}
+
+type SignInRequest struct {
+	Identifier string `json:"email"`
+	Password   string `json:"password"`
+}
+
+func (r *SignInRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *SignInRequest) Validate() error {
+	if r.Identifier == "" {
+		return fmt.Errorf("email is empty")
 	}
 	if r.Password == "" {
 		return fmt.Errorf("password is empty")
+	}
+	return nil
+}
+
+type EmailRequest struct {
+	Email string `json:"email"`
+}
+
+func (r *EmailRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *EmailRequest) Validate() error {
+	if r.Email == "" {
+		return fmt.Errorf("email is empty")
+	}
+	return nil
+}
+
+type EmailConfirmRequest struct {
+	Email string `json:"email"`
+	Code  string `json:"code"`
+}
+
+func (r *EmailConfirmRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *EmailConfirmRequest) Validate() error {
+	if r.Email == "" {
+		return fmt.Errorf("email is empty")
+	}
+	if strings.TrimSpace(r.Code) == "" {
+		return fmt.Errorf("code is empty")
+	}
+	return nil
+}
+
+type PasswordResetRequest struct {
+	Email    string `json:"email"`
+	Code     string `json:"code"`
+	Password string `json:"password"`
+}
+
+func (r *PasswordResetRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *PasswordResetRequest) Validate() error {
+	if r.Email == "" {
+		return fmt.Errorf("email is empty")
+	}
+	if strings.TrimSpace(r.Code) == "" {
+		return fmt.Errorf("code is empty")
+	}
+	if r.Password == "" {
+		return fmt.Errorf("password is empty")
+	}
+	return nil
+}
+
+type ChangeUsernameRequest struct {
+	Username string `json:"username"`
+}
+
+func (r *ChangeUsernameRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *ChangeUsernameRequest) Validate() error {
+	if strings.TrimSpace(r.Username) == "" {
+		return fmt.Errorf("username is empty")
 	}
 	return nil
 }

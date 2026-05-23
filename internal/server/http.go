@@ -32,7 +32,7 @@ func New(service *service.Service, jwt *jwt.Service) *Server {
 			"http://localhost:5173",
 			"https://eurovision-voting-fe.onrender.com",
 		},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -50,18 +50,24 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 
 	s.publicRouter.Route("/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/signup", s.signupHandler)
+			r.Post("/signup/start", s.signupStartHandler)
+			r.Post("/signup/confirm", s.signupConfirmHandler)
 			r.Post("/signin", s.signinHandler)
+			r.Post("/password/forgot", s.passwordForgotHandler)
+			r.Post("/password/reset", s.passwordResetHandler)
 			r.With(s.AuthMiddleware).Get("/validate", func(w http.ResponseWriter, r *http.Request) {})
+			r.With(s.AuthMiddleware).Post("/email/request", s.emailBindRequestHandler)
+			r.With(s.AuthMiddleware).Post("/email/confirm", s.emailBindConfirmHandler)
 		})
 
 		r.Route("/user", func(r chi.Router) {
 			r.With(s.AuthMiddleware).Get("/me", s.getMe)
-			r.With(s.AuthMiddleware).Delete("/avatar", s.deleteAvatar)
+			r.With(s.AuthMiddleware).Patch("/username", s.changeUsernameHandler) // allowed before email verified
+			r.With(s.AuthMiddleware, s.VerifiedEmailMiddleware).Delete("/avatar", s.deleteAvatar)
 			r.Get("/public", s.getUserPublic)
 		})
 
-		r.With(s.AuthMiddleware).Post("/media/upload", s.uploadMedia)
+		r.With(s.AuthMiddleware, s.VerifiedEmailMiddleware).Post("/media/upload", s.uploadMedia)
 
 		r.Route("/contest", func(r chi.Router) {
 			r.Get("/", s.getContestsByYearHandler)
@@ -76,12 +82,12 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 			r.Get("/giphy/search", s.proxyGiphySearch)
 		})
 
-		r.With(s.AuthMiddleware).Post("/performance/{id}/rate", s.ratePerformance)
+		r.With(s.AuthMiddleware, s.VerifiedEmailMiddleware).Post("/performance/{id}/rate", s.ratePerformance)
 
 		r.Get("/ws", s.serveWS())
 
 		r.Route("/message", func(r chi.Router) {
-			r.With(s.AuthMiddleware).Post("/send", s.sendMessage)
+			r.With(s.AuthMiddleware, s.VerifiedEmailMiddleware).Post("/send", s.sendMessage)
 			r.Get("/", s.getMessages)
 		})
 	})

@@ -76,6 +76,15 @@ func (s *Service) GetUserPublic(ctx context.Context, id uuid.UUID) (*domain.User
 	}, nil
 }
 
+func (s *Service) GetUserMe(ctx context.Context, id uuid.UUID) (*domain.UserMe, error) {
+	u, err := s.storage.GetUser(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	me := s.UserMeFromUser(u)
+	return &me, nil
+}
+
 func (s *Service) SetUserAvatar(ctx context.Context, userID uuid.UUID, url string) error {
 	return s.storage.UpdateUserAvatar(ctx, userID, url)
 }
