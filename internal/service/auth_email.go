@@ -133,9 +133,11 @@ func (s *Service) createAndSendCode(ctx context.Context, email, purpose, subject
 	if err := s.storage.CreateAuthCode(ctx, row); err != nil {
 		return err
 	}
-	if err := s.sendCodeEmail(email, code, subject); err != nil {
-		return err
-	}
+	// temporary disable send email verification code
+	// render blocks stmp trafic 
+	// if err := s.sendCodeEmail(email, code, subject); err != nil {
+	// 	return err
+	// }
 	return nil
 }
 
