@@ -90,6 +90,10 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 
 	s.publicRouter.Route("/admin", func(r chi.Router) {
 		r.Use(s.CheckRoleMw("ADMIN"))
+		r.Post("/contest", s.adminCreateContest)
+		r.Put("/contest/{id}", s.adminUpdateContest)
+		r.Post("/contest/{id}/performance", s.adminCreatePerformance)
+		r.Put("/contest/{id}/places", s.adminUpdatePlaces)
 		r.Put("/performance/{id}", s.updatePerformance)
 	})
 }

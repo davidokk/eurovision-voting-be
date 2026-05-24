@@ -94,10 +94,6 @@ func (s *Service) RatePerformance(ctx context.Context, userID, performanceID uui
 	return nil
 }
 
-func (s *Service) UpdatePerformance(ctx context.Context, id uuid.UUID, qualified bool, link string, place int) error {
-	return s.storage.UpdatePerformance(ctx, id, qualified, link, place)
-}
-
 func (s *Service) GetScoresFiltered(ctx context.Context, f domain.Filters) ([]domain.ScoreFiltered, error) {
 	return s.storage.GetScoresFiltered(ctx, f)
 }

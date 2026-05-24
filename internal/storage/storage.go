@@ -293,17 +293,8 @@ func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uui
 	return old, nil
 }
 
-func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID, qualified bool, link string, place int) error {
-	_, err := s.pool.Exec(ctx, `
-		update performance 
-		set 
-			qualified = $1, 
-			youtube_link = $2,
-			place = $3 
-		where id = $4
-		`, qualified, link, place, performanceID,
-	)
-	return err
+func (s *Storage) UpdatePerformance(ctx context.Context, performanceID uuid.UUID, qualified bool, link string, place *int) error {
+	return s.UpdatePerformanceFields(ctx, performanceID, qualified, link, place)
 }
 
 func (s *Storage) GetScoresFiltered(ctx context.Context, f domain.Filters) ([]domain.ScoreFiltered, error) {

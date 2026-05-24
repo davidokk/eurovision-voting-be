@@ -77,7 +77,7 @@ type UpdatePerformanceRequest struct {
 	PerformanceID uuid.UUID
 	Qualified     bool   `json:"qualified"`
 	YoutubeLink   string `json:"youtube_link"`
-	Place         int    `json:"place"`
+	Place         *int   `json:"place"`
 }
 
 func (r *UpdatePerformanceRequest) Bind(req *http.Request) error {
@@ -201,5 +201,63 @@ func (r *SendMessageRequest) Validate() error {
 	default:
 		return fmt.Errorf("invalid content_type")
 	}
+	return nil
+}
+
+type AdminCreateContestRequest struct {
+	Year  int    `json:"year"`
+	Type  string `json:"type"`
+	Starts string `json:"starts"`
+	Ends   string `json:"ends"`
+}
+
+func (r *AdminCreateContestRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *AdminCreateContestRequest) Validate() error {
+	if r.Year < 2000 || r.Year > 2100 {
+		return fmt.Errorf("invalid year")
+	}
+	if strings.TrimSpace(r.Type) == "" {
+		return fmt.Errorf("type required")
+	}
+	if strings.TrimSpace(r.Starts) == "" || strings.TrimSpace(r.Ends) == "" {
+		return fmt.Errorf("starts and ends required")
+	}
+	return nil
+}
+
+type AdminCreatePerformanceRequest struct {
+	CountryID    string `json:"country_id"`
+	Number       int    `json:"number"`
+	Artist       string `json:"artist"`
+	Song         string `json:"song"`
+	YoutubeLink  string `json:"youtube_link"`
+}
+
+func (r *AdminCreatePerformanceRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *AdminCreatePerformanceRequest) Validate() error {
+	if _, err := uuid.Parse(r.CountryID); err != nil {
+		return fmt.Errorf("invalid country_id")
+	}
+	if strings.TrimSpace(r.Artist) == "" || strings.TrimSpace(r.Song) == "" {
+		return fmt.Errorf("artist and song required")
+	}
+	return nil
+}
+
+type AdminUpdatePlacesRequest struct {
+	Ranked []string `json:"ranked"`
+}
+
+func (r *AdminUpdatePlacesRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *AdminUpdatePlacesRequest) Validate() error {
 	return nil
 }

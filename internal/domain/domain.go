@@ -103,11 +103,6 @@ type PerformanceWithScores struct {
 	Place         *int        `json:"place"`
 }
 
-type ContestParticipantView struct {
-	UserID string `json:"user_id"`
-	Name   string `json:"name"`
-}
-
 type ContestView struct {
 	Contest      Contest                 `json:"contest"`
 	Performances []PerformanceWithScores `json:"performances"`
