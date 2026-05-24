@@ -109,8 +109,9 @@ type ContestView struct {
 }
 
 type ScoreFiltered struct {
-	Username    string
-	CountryName string
+	PerformanceID string
+	Username      string
+	CountryName   string
 	ContestYear int
 	ContestType string
 	Score       int

@@ -61,6 +61,7 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 			r.With(s.AuthMiddleware).Patch("/username", s.changeUsernameHandler)
 			r.With(s.AuthMiddleware, s.VerifiedAccountMiddleware).Delete("/avatar", s.deleteAvatar)
 			r.Get("/public", s.getUserPublic)
+			r.Get("/list", s.listUsersHandler)
 		})
 
 		r.With(s.AuthMiddleware, s.VerifiedAccountMiddleware).Post("/media/upload", s.uploadMedia)

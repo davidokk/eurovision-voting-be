@@ -2,7 +2,9 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
+	"eurovision-voting/internal/domain"
 	"eurovision-voting/internal/server/request"
 	"eurovision-voting/internal/server/response"
 
@@ -61,6 +63,24 @@ func (s *Server) deleteAvatar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	EncodeJSONResponse(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) listUsersHandler(w http.ResponseWriter, r *http.Request) {
+	var excludeID *uuid.UUID
+	if ex := strings.TrimSpace(r.URL.Query().Get("exclude")); ex != "" {
+		if id, err := uuid.Parse(ex); err == nil {
+			excludeID = &id
+		}
+	}
+	users, err := s.service.ListUsers(r.Context(), excludeID, 1000)
+	if err != nil {
+		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if users == nil {
+		users = []domain.UserPublic{}
+	}
+	EncodeJSONResponse(w, http.StatusOK, users)
 }
 
 func (s *Server) getUserPublic(w http.ResponseWriter, r *http.Request) {

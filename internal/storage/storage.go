@@ -305,6 +305,7 @@ func (s *Storage) GetScoresFiltered(ctx context.Context, f domain.Filters) ([]do
 
 	query := `
     SELECT 
+        p.id::text as performance_id,
         u.username,
         c.name_ru as country_name,
         co.year as contest_year,
@@ -370,6 +371,7 @@ func (s *Storage) GetScoresFiltered(ctx context.Context, f domain.Filters) ([]do
 		var r domain.ScoreFiltered
 
 		err := rows.Scan(
+			&r.PerformanceID,
 			&r.Username,
 			&r.CountryName,
 			&r.ContestYear,

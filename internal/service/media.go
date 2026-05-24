@@ -64,6 +64,10 @@ func (s *Service) UploadMedia(ctx context.Context, userID uuid.UUID, kind string
 	}
 }
 
+func (s *Service) ListUsers(ctx context.Context, excludeID *uuid.UUID, limit int) ([]domain.UserPublic, error) {
+	return s.storage.ListUsers(ctx, excludeID, limit)
+}
+
 func (s *Service) GetUserPublic(ctx context.Context, id uuid.UUID) (*domain.UserPublic, error) {
 	u, err := s.storage.GetUser(ctx, id)
 	if err != nil {
