@@ -67,8 +67,11 @@ func (r *RatePerformanceRequest) Validate() error {
 	if r.PerformanceID == uuid.Nil {
 		return errors.New("performance_id is missing")
 	}
-	if r.Score < 1 || r.Score > 10 {
-		return errors.New("score must be between 1 and 10")
+	if r.Score < 1 || r.Score > 12 {
+		return errors.New("score must be between 1 and 10, or 12")
+	}
+	if r.Score > 10 && r.Score < 12 {
+		return errors.New("score must be between 1 and 10, or 12")
 	}
 	return nil
 }
