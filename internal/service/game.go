@@ -21,6 +21,7 @@ import (
 const (
 	defaultGameRoundDurationSec = 10
 	gameCodeLen                 = 6
+	roundCountdownSec           = 3
 )
 
 var (
@@ -640,12 +641,35 @@ func (s *Service) startRoundLocked(code string, room *gameRoomInternal) {
 	room.LastJudgement = nil
 	room.ContestScores = nil
 	room.VideoStartSec = randomVideoStartSec()
-	room.RoundMode = "audio"
+	room.RoundMode = "silent"
+	room.State = "round_countdown"
+	ends := time.Now().Add(roundCountdownSec * time.Second)
+	room.RoundEndsAt = &ends
+
+	room.roundTimer = time.AfterFunc(roundCountdownSec*time.Second, func() {
+		s.onRoundCountdownDone(code)
+	})
+}
+
+func (s *Service) onRoundCountdownDone(code string) {
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+
+	room, ok := s.gameRooms[code]
+	if !ok || room.State != "round_countdown" {
+		return
+	}
+	s.beginRoundPlayingLocked(code, room)
+	s.broadcastGameRoomLocked(code, room)
+}
+
+func (s *Service) beginRoundPlayingLocked(code string, room *gameRoomInternal) {
 	room.State = "round_playing"
+	room.RoundMode = "audio"
 	dur := s.roundPlayDuration(room)
 	ends := time.Now().Add(dur)
 	room.RoundEndsAt = &ends
-
+	s.stopRoundTimer(room)
 	room.roundTimer = time.AfterFunc(dur, func() {
 		s.onRoundPlayTimeout(code)
 	})
@@ -661,8 +685,7 @@ func (s *Service) onRoundPlayTimeout(code string) {
 	}
 	s.stopRoundTimer(room)
 	room.RoundEndsAt = nil
-	room.State = "round_waiting_reveal"
-	room.RoundMode = "silent"
+	s.enterRevealLocked(context.Background(), room)
 
 	s.broadcastGameRoomLocked(code, room)
 }
@@ -1048,7 +1071,7 @@ func (s *Service) roomViewForUserLocked(room *gameRoomInternal, userID uuid.UUID
 
 func (s *Service) isActiveGameState(state string) bool {
 	switch state {
-	case "round_playing", "round_buzzed", "round_waiting_reveal", "round_reveal", "round_clip":
+	case "round_countdown", "round_playing", "round_buzzed", "round_waiting_reveal", "round_reveal", "round_clip":
 		return true
 	default:
 		return false
