@@ -67,6 +67,8 @@ type GameRoomView struct {
 	TotalRounds      int                `json:"total_rounds"`
 	BuzzedUserID     *string            `json:"buzzed_user_id,omitempty"`
 	BuzzedUsername   *string            `json:"buzzed_username,omitempty"`
+	BuzzedAnswer     *string            `json:"buzzed_answer,omitempty"`
+	PlayMode         string             `json:"play_mode,omitempty"` // offline | online
 	Round            *GameRoundView     `json:"round,omitempty"`
 	LastJudgement    *GameJudgement     `json:"last_judgement,omitempty"`
 }

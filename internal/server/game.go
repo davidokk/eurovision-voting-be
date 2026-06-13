@@ -124,6 +124,38 @@ func (s *Server) gameBuzz(w http.ResponseWriter, r *http.Request) {
 	EncodeJSONResponse(w, http.StatusOK, room)
 }
 
+type gameAnswerRequest struct {
+	Answer string `json:"answer"`
+}
+
+func (s *Server) gameSubmitAnswer(w http.ResponseWriter, r *http.Request) {
+	userID, ok := getUserFromContext(r.Context())
+	if !ok {
+		EncodeJSONResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	code := chi.URLParam(r, "code")
+
+	var req gameAnswerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		EncodeJSONResponse(w, http.StatusBadRequest, ApiError{Err: "invalid body"})
+		return
+	}
+
+	room, err := s.service.GameSubmitAnswer(code, userID, req.Answer)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, service.ErrGameNotFound) {
+			status = http.StatusNotFound
+		} else if errors.Is(err, service.ErrGameForbidden) {
+			status = http.StatusForbidden
+		}
+		EncodeJSONResponse(w, status, ApiError{Err: err.Error()})
+		return
+	}
+	EncodeJSONResponse(w, http.StatusOK, room)
+}
+
 func (s *Server) serveGameWS() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)

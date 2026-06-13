@@ -47,12 +47,15 @@ type gameRoomInternal struct {
 	CurrentRound     int
 	BuzzedUserID     *uuid.UUID
 	BuzzedUsername   string
+	BuzzedAnswer     string
+	PlayMode         string
 	RoundMode        string
 	VideoStartSec    int
 	RoundEndsAt      *time.Time
 	ContestScores    []domain.GameContestScore
 	LastJudgement    *domain.GameJudgement
 	roundTimer       *time.Timer
+	roundPauseRemaining time.Duration
 }
 
 func randomGameCode() (string, error) {
@@ -148,6 +151,7 @@ func (s *Service) CreateGameRoom(ctx context.Context, hostID uuid.UUID) (*domain
 		RoundMode:        "audio",
 		PlaylistMode:     "manual",
 		AutoCount:        10,
+		PlayMode:         "offline",
 	}
 	room.Players[hostID] = gamePlayerFromUser(user, 0)
 
@@ -535,6 +539,32 @@ func (s *Service) SetGameRoundDuration(code string, hostID uuid.UUID, seconds in
 	return view, nil
 }
 
+func (s *Service) SetGamePlayMode(code string, hostID uuid.UUID, mode string) (*domain.GameRoomView, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if mode != "online" {
+		mode = "offline"
+	}
+
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+
+	room, ok := s.gameRooms[code]
+	if !ok {
+		return nil, ErrGameNotFound
+	}
+	if room.HostUserID != hostID {
+		return nil, ErrGameForbidden
+	}
+	if room.State != "lobby" {
+		return nil, ErrGameInvalidState
+	}
+	room.PlayMode = mode
+
+	view := s.roomViewLocked(room)
+	s.broadcastGameRoomLocked(code, view)
+	return view, nil
+}
+
 func (s *Service) SetGamePoints(code string, hostID uuid.UUID, points int) (*domain.GameRoomView, error) {
 	if points < 1 || points > 100 {
 		points = 10
@@ -595,8 +625,10 @@ func (s *Service) StartGame(ctx context.Context, code string, hostID uuid.UUID) 
 
 func (s *Service) startRoundLocked(code string, room *gameRoomInternal) {
 	s.stopRoundTimer(room)
+	room.roundPauseRemaining = 0
 	room.BuzzedUserID = nil
 	room.BuzzedUsername = ""
+	room.BuzzedAnswer = ""
 	room.LastJudgement = nil
 	room.ContestScores = nil
 	room.VideoStartSec = randomVideoStartSec()
@@ -654,8 +686,51 @@ func (s *Service) GameBuzz(code string, userID uuid.UUID) (*domain.GameRoomView,
 	player := room.Players[userID]
 	room.BuzzedUserID = &userID
 	room.BuzzedUsername = player.Username
+	room.BuzzedAnswer = ""
 	room.State = "round_buzzed"
 	room.RoundMode = "silent"
+
+	view := s.roomViewLocked(room)
+	s.broadcastGameRoomLocked(code, view)
+	return view, nil
+}
+
+const maxGameAnswerLen = 200
+
+func (s *Service) GameSubmitAnswer(code string, userID uuid.UUID, answer string) (*domain.GameRoomView, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	answer = strings.TrimSpace(answer)
+	if answer == "" {
+		return nil, fmt.Errorf("answer required")
+	}
+	if len([]rune(answer)) > maxGameAnswerLen {
+		return nil, fmt.Errorf("answer too long")
+	}
+
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+
+	room, ok := s.gameRooms[code]
+	if !ok {
+		return nil, ErrGameNotFound
+	}
+	if _, in := room.Players[userID]; !in {
+		return nil, ErrGameNotInRoom
+	}
+	if room.PlayMode != "online" {
+		return nil, ErrGameInvalidState
+	}
+	if room.State != "round_buzzed" || room.BuzzedUserID == nil {
+		return nil, ErrGameInvalidState
+	}
+	if *room.BuzzedUserID != userID {
+		return nil, ErrGameForbidden
+	}
+	if room.BuzzedAnswer != "" {
+		return nil, fmt.Errorf("answer already submitted")
+	}
+
+	room.BuzzedAnswer = answer
 
 	view := s.roomViewLocked(room)
 	s.broadcastGameRoomLocked(code, view)
@@ -824,7 +899,32 @@ func (s *Service) GamePause(code string, hostID uuid.UUID, paused bool) (*domain
 		return nil, ErrGameInvalidState
 	}
 
-	room.Paused = paused
+	if paused {
+		room.Paused = true
+		if room.State == "round_playing" && room.RoundEndsAt != nil {
+			remaining := time.Until(*room.RoundEndsAt)
+			if remaining < 0 {
+				remaining = 0
+			}
+			s.stopRoundTimer(room)
+			room.roundPauseRemaining = remaining
+			snap := time.Now().Add(remaining)
+			room.RoundEndsAt = &snap
+		}
+	} else {
+		room.Paused = false
+		if room.State == "round_playing" && room.roundPauseRemaining > 0 {
+			remaining := room.roundPauseRemaining
+			room.roundPauseRemaining = 0
+			ends := time.Now().Add(remaining)
+			room.RoundEndsAt = &ends
+			s.stopRoundTimer(room)
+			room.roundTimer = time.AfterFunc(remaining, func() {
+				s.onRoundPlayTimeout(code)
+			})
+		}
+	}
+
 	view := s.roomViewLocked(room)
 	s.broadcastGameRoomLocked(code, view)
 	return view, nil
@@ -873,6 +973,15 @@ func (s *Service) roomViewLocked(room *gameRoomInternal) *domain.GameRoomView {
 		id := room.BuzzedUserID.String()
 		view.BuzzedUserID = &id
 		view.BuzzedUsername = &room.BuzzedUsername
+	}
+	if room.BuzzedAnswer != "" {
+		ans := room.BuzzedAnswer
+		view.BuzzedAnswer = &ans
+	}
+	if room.PlayMode != "" {
+		view.PlayMode = room.PlayMode
+	} else {
+		view.PlayMode = "offline"
 	}
 
 	if round := s.buildRoundViewLocked(room); round != nil {
@@ -1100,6 +1209,9 @@ func (s *Service) HandleGameHostAction(ctx context.Context, code string, hostID 
 			count = int(v)
 		}
 		return s.SetGamePlaylistAuto(ctx, code, hostID, count)
+	case "set_play_mode":
+		mode, _ := payload["mode"].(string)
+		return s.SetGamePlayMode(code, hostID, mode)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}

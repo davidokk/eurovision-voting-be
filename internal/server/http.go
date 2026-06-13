@@ -95,6 +95,7 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 			r.With(s.AuthMiddleware).Post("/rooms", s.createGameRoom)
 			r.With(s.AuthMiddleware).Post("/rooms/{code}/join", s.joinGameRoom)
 			r.With(s.AuthMiddleware).Post("/rooms/{code}/buzz", s.gameBuzz)
+			r.With(s.AuthMiddleware).Post("/rooms/{code}/answer", s.gameSubmitAnswer)
 			r.Get("/rooms/{code}", s.getGameRoom)
 			r.With(s.AuthMiddleware).Post("/rooms/{code}/action", s.gameRoomAction)
 			r.Get("/ws", s.serveGameWS())
