@@ -32,7 +32,7 @@ type GameRoundView struct {
 	PerformanceID string  `json:"performance_id"`
 	YoutubeLink   string  `json:"youtube_link"`
 	Mode          string  `json:"mode"` // audio | video | video_full | silent
-	VideoStartSec int     `json:"video_start_sec,omitempty"`
+	VideoStartSec int     `json:"video_start_sec"`
 	Artist        *string `json:"artist,omitempty"`
 	Song          *string `json:"song,omitempty"`
 	CountryName   *string `json:"country_name,omitempty"`

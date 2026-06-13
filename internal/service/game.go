@@ -194,18 +194,24 @@ func (s *Service) JoinGameRoom(ctx context.Context, code string, userID uuid.UUI
 		room.Players[userID].AvatarURL = user.AvatarURL
 	}
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, userID), nil
 }
 
 func (s *Service) GetGameRoom(code string) (*domain.GameRoomView, error) {
+	return s.GetGameRoomForUser(code, uuid.Nil)
+}
+
+func (s *Service) GetGameRoomForUser(code string, userID uuid.UUID) (*domain.GameRoomView, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 	s.gameMu.RLock()
 	defer s.gameMu.RUnlock()
 	room, ok := s.gameRooms[code]
 	if !ok {
 		return nil, ErrGameNotFound
+	}
+	if userID != uuid.Nil {
+		return s.roomViewForUserLocked(room, userID), nil
 	}
 	return s.roomViewLocked(room), nil
 }
@@ -455,9 +461,8 @@ func (s *Service) SetGamePlaylist(ctx context.Context, code string, hostID uuid.
 	room.Playlist = playlist
 	room.PlaylistMode = "manual"
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) SetGamePlaylistMode(code string, hostID uuid.UUID, mode string, count int) (*domain.GameRoomView, error) {
@@ -489,9 +494,8 @@ func (s *Service) SetGamePlaylistMode(code string, hostID uuid.UUID, mode string
 	room.PlaylistMode = mode
 	room.AutoCount = count
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) SetGamePlaylistAuto(ctx context.Context, code string, hostID uuid.UUID, count int) (*domain.GameRoomView, error) {
@@ -519,9 +523,8 @@ func (s *Service) SetGamePlaylistAuto(ctx context.Context, code string, hostID u
 		return nil, err
 	}
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) SetGameRoundDuration(code string, hostID uuid.UUID, seconds int) (*domain.GameRoomView, error) {
@@ -542,9 +545,8 @@ func (s *Service) SetGameRoundDuration(code string, hostID uuid.UUID, seconds in
 	}
 	room.RoundDurationSec = clampRoundDurationSec(seconds)
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) SetGamePlayMode(code string, hostID uuid.UUID, mode string) (*domain.GameRoomView, error) {
@@ -568,9 +570,8 @@ func (s *Service) SetGamePlayMode(code string, hostID uuid.UUID, mode string) (*
 	}
 	room.PlayMode = mode
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) SetGamePoints(code string, hostID uuid.UUID, points int) (*domain.GameRoomView, error) {
@@ -591,9 +592,8 @@ func (s *Service) SetGamePoints(code string, hostID uuid.UUID, points int) (*dom
 	}
 	room.PointsPerCorrect = points
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) StartGame(ctx context.Context, code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
@@ -626,9 +626,8 @@ func (s *Service) StartGame(ctx context.Context, code string, hostID uuid.UUID) 
 	room.LastJudgement = nil
 	s.startRoundLocked(code, room)
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) startRoundLocked(code string, room *gameRoomInternal) {
@@ -665,8 +664,7 @@ func (s *Service) onRoundPlayTimeout(code string) {
 	room.State = "round_waiting_reveal"
 	room.RoundMode = "silent"
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
+	s.broadcastGameRoomLocked(code, room)
 }
 
 func (s *Service) GameBuzz(code string, userID uuid.UUID) (*domain.GameRoomView, error) {
@@ -699,9 +697,8 @@ func (s *Service) GameBuzz(code string, userID uuid.UUID) (*domain.GameRoomView,
 	room.State = "round_buzzed"
 	room.RoundMode = "silent"
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, userID), nil
 }
 
 const maxGameAnswerLen = 200
@@ -741,9 +738,8 @@ func (s *Service) GameSubmitAnswer(code string, userID uuid.UUID, answer string)
 
 	room.BuzzedAnswer = answer
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, userID), nil
 }
 
 func (s *Service) loadContestScores(ctx context.Context, room *gameRoomInternal) {
@@ -835,9 +831,8 @@ func (s *Service) GameJudge(ctx context.Context, code string, hostID uuid.UUID, 
 
 	s.enterRevealLocked(ctx, room)
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) GameRevealAnswer(ctx context.Context, code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
@@ -860,9 +855,8 @@ func (s *Service) GameRevealAnswer(ctx context.Context, code string, hostID uuid
 	room.LastJudgement = nil
 	s.enterRevealLocked(ctx, room)
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) GameStartFullClip(code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
@@ -886,9 +880,8 @@ func (s *Service) GameStartFullClip(code string, hostID uuid.UUID) (*domain.Game
 	room.State = "round_clip"
 	room.RoundMode = "video_full"
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) GameAdvanceRound(code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
@@ -918,9 +911,8 @@ func (s *Service) GameAdvanceRound(code string, hostID uuid.UUID) (*domain.GameR
 		s.startRoundLocked(code, room)
 	}
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) GamePause(code string, hostID uuid.UUID, paused bool) (*domain.GameRoomView, error) {
@@ -966,9 +958,8 @@ func (s *Service) GamePause(code string, hostID uuid.UUID, paused bool) (*domain
 		}
 	}
 
-	view := s.roomViewLocked(room)
-	s.broadcastGameRoomLocked(code, view)
-	return view, nil
+	s.broadcastGameRoomLocked(code, room)
+	return s.roomViewForUserLocked(room, hostID), nil
 }
 
 func (s *Service) roomView(room *gameRoomInternal) *domain.GameRoomView {
@@ -1037,10 +1028,21 @@ func (s *Service) roomViewLocked(room *gameRoomInternal) *domain.GameRoomView {
 		view.PlayMode = "offline"
 	}
 
-	if round := s.buildRoundViewLocked(room); round != nil {
+	if round := s.buildRoundViewLocked(room, false); round != nil {
 		view.Round = round
 	}
 
+	return view
+}
+
+func (s *Service) roomViewForUserLocked(room *gameRoomInternal, userID uuid.UUID) *domain.GameRoomView {
+	forHost := userID != uuid.Nil && userID == room.HostUserID
+	view := s.roomViewLocked(room)
+	if forHost {
+		if round := s.buildRoundViewLocked(room, true); round != nil {
+			view.Round = round
+		}
+	}
 	return view
 }
 
@@ -1053,7 +1055,7 @@ func (s *Service) isActiveGameState(state string) bool {
 	}
 }
 
-func (s *Service) buildRoundViewLocked(room *gameRoomInternal) *domain.GameRoundView {
+func (s *Service) buildRoundViewLocked(room *gameRoomInternal, forHost bool) *domain.GameRoundView {
 	if !s.isActiveGameState(room.State) || len(room.Playlist) == 0 {
 		return nil
 	}
@@ -1078,7 +1080,8 @@ func (s *Service) buildRoundViewLocked(room *gameRoomInternal) *domain.GameRound
 		round.RoundEndsAt = room.RoundEndsAt
 	}
 	revealed := room.State == "round_reveal" || room.State == "round_clip"
-	if revealed {
+	hostHint := forHost && (room.State == "round_buzzed" || room.State == "round_waiting_reveal")
+	if revealed || hostHint {
 		round.Artist = &item.Artist
 		round.Song = &item.Song
 		round.CountryName = &item.CountryName
@@ -1092,15 +1095,16 @@ func (s *Service) buildRoundViewLocked(room *gameRoomInternal) *domain.GameRound
 	return round
 }
 
-func (s *Service) broadcastGameRoomLocked(code string, room *domain.GameRoomView) {
+func (s *Service) broadcastGameRoomLocked(code string, room *gameRoomInternal) {
 	conns := s.gameRoomConns[code]
 	if len(conns) == 0 {
 		return
 	}
 
-	event := domain.GameEvent{Type: "game.state", Room: room}
 	var stale []uuid.UUID
 	for userID, conn := range conns {
+		view := s.roomViewForUserLocked(room, userID)
+		event := domain.GameEvent{Type: "game.state", Room: view}
 		_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 		if err := conn.WriteJSON(event); err != nil {
 			stale = append(stale, userID)
@@ -1135,7 +1139,7 @@ func (s *Service) ServeGameConn(code string, userID uuid.UUID, username string, 
 		} else if room.Players[userID].Username == "" {
 			room.Players[userID].Username = username
 		}
-		view := s.roomViewLocked(room)
+		view := s.roomViewForUserLocked(room, userID)
 		s.gameMu.Unlock()
 
 		_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))

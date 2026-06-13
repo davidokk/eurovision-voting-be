@@ -60,7 +60,14 @@ func (s *Server) joinGameRoom(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getGameRoom(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
-	room, err := s.service.GetGameRoom(code)
+	userID, authed := getUserFromContext(r.Context())
+	var room *domain.GameRoomView
+	var err error
+	if authed {
+		room, err = s.service.GetGameRoomForUser(code, userID)
+	} else {
+		room, err = s.service.GetGameRoom(code)
+	}
 	if err != nil {
 		status := http.StatusNotFound
 		EncodeJSONResponse(w, status, ApiError{Err: err.Error()})
