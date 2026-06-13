@@ -55,6 +55,7 @@ type gameRoomInternal struct {
 	ContestScores    []domain.GameContestScore
 	LastJudgement    *domain.GameJudgement
 	roundTimer       *time.Timer
+	clipTimer        *time.Timer
 	roundPauseRemaining time.Duration
 }
 
@@ -113,6 +114,13 @@ func (s *Service) stopRoundTimer(room *gameRoomInternal) {
 	if room.roundTimer != nil {
 		room.roundTimer.Stop()
 		room.roundTimer = nil
+	}
+}
+
+func (s *Service) stopClipTimer(room *gameRoomInternal) {
+	if room.clipTimer != nil {
+		room.clipTimer.Stop()
+		room.clipTimer = nil
 	}
 }
 
@@ -625,6 +633,7 @@ func (s *Service) StartGame(ctx context.Context, code string, hostID uuid.UUID) 
 
 func (s *Service) startRoundLocked(code string, room *gameRoomInternal) {
 	s.stopRoundTimer(room)
+	s.stopClipTimer(room)
 	room.roundPauseRemaining = 0
 	room.BuzzedUserID = nil
 	room.BuzzedUsername = ""
@@ -763,7 +772,38 @@ func (s *Service) enterRevealLocked(ctx context.Context, room *gameRoomInternal)
 	s.loadContestScores(ctx, room)
 }
 
-func (s *Service) GameJudge(ctx context.Context, code string, hostID uuid.UUID, correct bool) (*domain.GameRoomView, error) {
+func gameJudgeDelta(outcome string, pointsPerCorrect int) (delta int, correct bool) {
+	switch outcome {
+	case "full":
+		return pointsPerCorrect, true
+	case "half":
+		half := pointsPerCorrect / 2
+		if half <= 0 {
+			half = 1
+		}
+		return half, true
+	default:
+		return -pointsPerCorrect, false
+	}
+}
+
+func parseJudgeOutcome(payload map[string]any) string {
+	if o, ok := payload["outcome"].(string); ok {
+		switch strings.TrimSpace(strings.ToLower(o)) {
+		case "full", "half", "wrong":
+			return strings.TrimSpace(strings.ToLower(o))
+		}
+	}
+	if correct, ok := payload["correct"].(bool); ok {
+		if correct {
+			return "full"
+		}
+		return "wrong"
+	}
+	return "wrong"
+}
+
+func (s *Service) GameJudge(ctx context.Context, code string, hostID uuid.UUID, outcome string) (*domain.GameRoomView, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 
 	s.gameMu.Lock()
@@ -782,14 +822,12 @@ func (s *Service) GameJudge(ctx context.Context, code string, hostID uuid.UUID, 
 
 	buzzedID := *room.BuzzedUserID
 	player := room.Players[buzzedID]
-	delta := 0
-	if correct {
-		delta = room.PointsPerCorrect
-		player.Score += delta
-	}
+	delta, correct := gameJudgeDelta(outcome, room.PointsPerCorrect)
+	player.Score += delta
 
 	room.LastJudgement = &domain.GameJudgement{
 		Correct:  correct,
+		Outcome:  outcome,
 		Username: player.Username,
 		Points:   player.Score,
 		Delta:    delta,
@@ -844,6 +882,7 @@ func (s *Service) GameStartFullClip(code string, hostID uuid.UUID) (*domain.Game
 		return nil, ErrGameInvalidState
 	}
 
+	s.stopClipTimer(room)
 	room.State = "round_clip"
 	room.RoundMode = "video_full"
 
@@ -868,6 +907,8 @@ func (s *Service) GameAdvanceRound(code string, hostID uuid.UUID) (*domain.GameR
 	if room.State != "round_reveal" && room.State != "round_clip" {
 		return nil, ErrGameInvalidState
 	}
+
+	s.stopClipTimer(room)
 
 	if room.CurrentRound+1 >= len(room.Playlist) {
 		room.State = "finished"
@@ -967,6 +1008,18 @@ func (s *Service) roomViewLocked(room *gameRoomInternal) *domain.GameRoomView {
 		preview := make([]domain.GameCatalogItem, len(room.Playlist))
 		copy(preview, room.Playlist)
 		view.PlaylistPreview = preview
+	}
+
+	if len(room.Playlist) > 0 {
+		sources := make([]string, 0, len(room.Playlist))
+		for _, item := range room.Playlist {
+			if item.YoutubeLink != "" {
+				sources = append(sources, item.YoutubeLink)
+			}
+		}
+		if len(sources) > 0 {
+			view.PlaylistSources = sources
+		}
 	}
 
 	if room.BuzzedUserID != nil {
@@ -1169,8 +1222,8 @@ func (s *Service) HandleGameHostAction(ctx context.Context, code string, hostID 
 	case "start":
 		return s.StartGame(ctx, code, hostID)
 	case "judge":
-		correct, _ := payload["correct"].(bool)
-		return s.GameJudge(ctx, code, hostID, correct)
+		outcome := parseJudgeOutcome(payload)
+		return s.GameJudge(ctx, code, hostID, outcome)
 	case "reveal":
 		return s.GameRevealAnswer(ctx, code, hostID)
 	case "clip":

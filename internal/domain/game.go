@@ -69,15 +69,32 @@ type GameRoomView struct {
 	BuzzedUsername   *string            `json:"buzzed_username,omitempty"`
 	BuzzedAnswer     *string            `json:"buzzed_answer,omitempty"`
 	PlayMode         string             `json:"play_mode,omitempty"` // offline | online
+	PlaylistSources  []string           `json:"playlist_sources,omitempty"`
 	Round            *GameRoundView     `json:"round,omitempty"`
 	LastJudgement    *GameJudgement     `json:"last_judgement,omitempty"`
 }
 
 type GameJudgement struct {
 	Correct  bool   `json:"correct"`
+	Outcome  string `json:"outcome,omitempty"` // full | half | wrong
 	Username string `json:"username"`
 	Points   int    `json:"points"`
 	Delta    int    `json:"delta"`
+}
+
+type SavedPlaylist struct {
+	ID        string                   `json:"id"`
+	Name      string                   `json:"name"`
+	Entries   []GamePlaylistEntryInput `json:"entries"`
+	CreatedAt time.Time                `json:"created_at"`
+	UpdatedAt time.Time                `json:"updated_at"`
+}
+
+type SavedPlaylistSummary struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	EntryCount int       `json:"entry_count"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 type GameEvent struct {

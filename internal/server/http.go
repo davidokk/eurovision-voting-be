@@ -99,6 +99,12 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 			r.Get("/rooms/{code}", s.getGameRoom)
 			r.With(s.AuthMiddleware).Post("/rooms/{code}/action", s.gameRoomAction)
 			r.Get("/ws", s.serveGameWS())
+
+			r.With(s.AuthMiddleware).Get("/playlists", s.listSavedPlaylists)
+			r.With(s.AuthMiddleware).Post("/playlists", s.createSavedPlaylist)
+			r.With(s.AuthMiddleware).Get("/playlists/{id}", s.getSavedPlaylist)
+			r.With(s.AuthMiddleware).Put("/playlists/{id}", s.updateSavedPlaylist)
+			r.With(s.AuthMiddleware).Delete("/playlists/{id}", s.deleteSavedPlaylist)
 		})
 	})
 
