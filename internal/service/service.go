@@ -20,6 +20,10 @@ type Service struct {
 
 	mu        sync.RWMutex
 	userConns map[uuid.UUID]*websocket.Conn
+
+	gameMu        sync.RWMutex
+	gameRooms     map[string]*gameRoomInternal
+	gameRoomConns map[string]map[uuid.UUID]*websocket.Conn
 }
 
 func New(storage *storage.Storage, jwtSvc *jwt.Service, s3 *media.S3, telegramBotUsername string, signupAllowed bool) *Service {
@@ -30,6 +34,8 @@ func New(storage *storage.Storage, jwtSvc *jwt.Service, s3 *media.S3, telegramBo
 		telegramBotUsername: strings.TrimPrefix(strings.TrimSpace(telegramBotUsername), "@"),
 		signupAllowed:       signupAllowed,
 		userConns:           make(map[uuid.UUID]*websocket.Conn),
+		gameRooms:           make(map[string]*gameRoomInternal),
+		gameRoomConns:       make(map[string]map[uuid.UUID]*websocket.Conn),
 	}
 }
 

@@ -10,6 +10,9 @@ func mapAuthError(err error) (int, string) {
 	if status, code, ok := mapTelegramAuthError(err); ok {
 		return status, code
 	}
+	if status, code, ok := mapPasswordAuthError(err); ok {
+		return status, code
+	}
 	switch {
 	case errors.Is(err, service.ErrUsernameTaken):
 		return http.StatusConflict, UsernameTakenCode
@@ -26,6 +29,10 @@ func authErrorMessage(err error, code string) string {
 		return "Неверный или просроченный код. Проверьте цифры или запросите новый код."
 	case UsernameTakenCode:
 		return "Это имя пользователя уже занято."
+	case UserNotExistsCode:
+		return "Пользователь не найден. Проверьте логин или зарегистрируйтесь."
+	case WrongPasswordCode:
+		return "Неверный пароль."
 	case TelegramNotConfiguredCode:
 		return "Вход через Telegram временно недоступен. Попробуйте позже."
 	case TelegramRateLimitCode:

@@ -36,6 +36,25 @@ type ChangeUsernameRequest struct {
 	Username string `json:"username"`
 }
 
+type CredentialsRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func (r *CredentialsRequest) Bind(req *http.Request) error {
+	return json.NewDecoder(req.Body).Decode(r)
+}
+
+func (r *CredentialsRequest) Validate() error {
+	if strings.TrimSpace(r.Username) == "" {
+		return fmt.Errorf("username is empty")
+	}
+	if strings.TrimSpace(r.Password) == "" {
+		return fmt.Errorf("password is empty")
+	}
+	return nil
+}
+
 func (r *ChangeUsernameRequest) Bind(req *http.Request) error {
 	return json.NewDecoder(req.Body).Decode(r)
 }

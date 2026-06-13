@@ -50,6 +50,8 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 
 	s.publicRouter.Route("/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
+			r.Post("/signin", s.signinHandler)
+			r.Post("/signup", s.signupHandler)
 			r.Post("/telegram/signin/start", s.telegramSigninStartHandler)
 			r.Post("/telegram/signin/confirm", s.telegramSigninConfirmHandler)
 			r.Get("/telegram/session", s.telegramSessionStatusHandler)
@@ -86,6 +88,16 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 		r.Route("/message", func(r chi.Router) {
 			r.With(s.AuthMiddleware, s.VerifiedAccountMiddleware).Post("/send", s.sendMessage)
 			r.Get("/", s.getMessages)
+		})
+
+		r.Route("/game", func(r chi.Router) {
+			r.Get("/catalog", s.getGameCatalog)
+			r.With(s.AuthMiddleware).Post("/rooms", s.createGameRoom)
+			r.With(s.AuthMiddleware).Post("/rooms/{code}/join", s.joinGameRoom)
+			r.With(s.AuthMiddleware).Post("/rooms/{code}/buzz", s.gameBuzz)
+			r.Get("/rooms/{code}", s.getGameRoom)
+			r.With(s.AuthMiddleware).Post("/rooms/{code}/action", s.gameRoomAction)
+			r.Get("/ws", s.serveGameWS())
 		})
 	})
 
