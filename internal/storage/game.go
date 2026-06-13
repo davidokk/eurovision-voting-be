@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"eurovision-voting/internal/domain"
+
+	"github.com/google/uuid"
 )
 
 func (s *Storage) ListGameCatalog(ctx context.Context) ([]domain.GameCatalogItem, error) {
@@ -101,4 +103,29 @@ func (s *Storage) GetGameCatalogItems(ctx context.Context, ids []string) ([]doma
 		}
 	}
 	return ordered, nil
+}
+
+func (s *Storage) GetScoresForPerformance(ctx context.Context, performanceID uuid.UUID) ([]domain.GameContestScore, error) {
+	query := `
+		SELECT u.username, sc.score, sc.comment
+		FROM scores sc
+		JOIN users u ON u.id = sc.user_id
+		WHERE sc.performance_id = $1
+		ORDER BY sc.score DESC, u.username ASC
+	`
+	rows, err := s.pool.Query(ctx, query, performanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []domain.GameContestScore
+	for rows.Next() {
+		var item domain.GameContestScore
+		if err := rows.Scan(&item.Username, &item.Score, &item.Comment); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,8 +19,8 @@ import (
 )
 
 const (
-	gameRevealDuration = 12 * time.Second
-	gameCodeLen        = 6
+	defaultGameRoundDurationSec = 10
+	gameCodeLen                 = 6
 )
 
 var (
@@ -37,15 +38,21 @@ type gameRoomInternal struct {
 	State            string
 	Paused           bool
 	PointsPerCorrect int
+	RoundDurationSec int
 	Players          map[uuid.UUID]*domain.GamePlayer
 	PlaylistIDs      []string
 	Playlist         []domain.GameCatalogItem
+	PlaylistMode     string
+	AutoCount        int
 	CurrentRound     int
 	BuzzedUserID     *uuid.UUID
 	BuzzedUsername   string
 	RoundMode        string
+	VideoStartSec    int
+	RoundEndsAt      *time.Time
+	ContestScores    []domain.GameContestScore
 	LastJudgement    *domain.GameJudgement
-	revealTimer      *time.Timer
+	roundTimer       *time.Timer
 }
 
 func randomGameCode() (string, error) {
@@ -59,6 +66,51 @@ func randomGameCode() (string, error) {
 		b[i] = alphabet[n.Int64()]
 	}
 	return string(b), nil
+}
+
+func randomVideoStartSec() int {
+	n, err := rand.Int(rand.Reader, big.NewInt(90))
+	if err != nil {
+		return 45
+	}
+	return int(n.Int64()) + 15
+}
+
+func gamePlayerFromUser(user *domain.User, score int) *domain.GamePlayer {
+	p := &domain.GamePlayer{
+		UserID:   user.ID.String(),
+		Username: user.Username,
+		Score:    score,
+	}
+	if user.AvatarURL != nil && *user.AvatarURL != "" {
+		p.AvatarURL = user.AvatarURL
+	}
+	return p
+}
+
+func clampRoundDurationSec(sec int) int {
+	if sec < 3 {
+		return 3
+	}
+	if sec > 120 {
+		return 120
+	}
+	return sec
+}
+
+func (s *Service) roundPlayDuration(room *gameRoomInternal) time.Duration {
+	sec := room.RoundDurationSec
+	if sec <= 0 {
+		sec = defaultGameRoundDurationSec
+	}
+	return time.Duration(sec) * time.Second
+}
+
+func (s *Service) stopRoundTimer(room *gameRoomInternal) {
+	if room.roundTimer != nil {
+		room.roundTimer.Stop()
+		room.roundTimer = nil
+	}
 }
 
 func (s *Service) GetGameCatalog(ctx context.Context) ([]domain.GameCatalogItem, error) {
@@ -91,14 +143,13 @@ func (s *Service) CreateGameRoom(ctx context.Context, hostID uuid.UUID) (*domain
 		HostUsername:     user.Username,
 		State:            "lobby",
 		PointsPerCorrect: 10,
+		RoundDurationSec: defaultGameRoundDurationSec,
 		Players:          make(map[uuid.UUID]*domain.GamePlayer),
 		RoundMode:        "audio",
+		PlaylistMode:     "manual",
+		AutoCount:        10,
 	}
-	room.Players[hostID] = &domain.GamePlayer{
-		UserID:   hostID.String(),
-		Username: user.Username,
-		Score:    0,
-	}
+	room.Players[hostID] = gamePlayerFromUser(user, 0)
 
 	s.gameMu.Lock()
 	s.gameRooms[code] = room
@@ -126,11 +177,9 @@ func (s *Service) JoinGameRoom(ctx context.Context, code string, userID uuid.UUI
 	}
 
 	if _, exists := room.Players[userID]; !exists {
-		room.Players[userID] = &domain.GamePlayer{
-			UserID:   userID.String(),
-			Username: user.Username,
-			Score:    0,
-		}
+		room.Players[userID] = gamePlayerFromUser(user, 0)
+	} else if user.AvatarURL != nil && *user.AvatarURL != "" {
+		room.Players[userID].AvatarURL = user.AvatarURL
 	}
 
 	view := s.roomViewLocked(room)
@@ -149,9 +198,229 @@ func (s *Service) GetGameRoom(code string) (*domain.GameRoomView, error) {
 	return s.roomViewLocked(room), nil
 }
 
-func (s *Service) SetGamePlaylist(ctx context.Context, code string, hostID uuid.UUID, ids []string) (*domain.GameRoomView, error) {
+func isCustomTrackID(id string) bool {
+	return strings.HasPrefix(id, "yt:")
+}
+
+var youtubeIDRe = regexp.MustCompile(`(?i)(?:youtu\.be/|youtube\.com.*v=)([^&?/]+)`)
+
+func extractYouTubeVideoID(link string) string {
+	m := youtubeIDRe.FindStringSubmatch(strings.TrimSpace(link))
+	if len(m) < 2 {
+		return ""
+	}
+	return m[1]
+}
+
+func customTrackItem(entry domain.GamePlaylistEntryInput) (domain.GameCatalogItem, error) {
+	id := strings.TrimSpace(entry.PerformanceID)
+	link := strings.TrimSpace(entry.YoutubeLink)
+	videoID := ""
+	if isCustomTrackID(id) {
+		videoID = strings.TrimPrefix(id, "yt:")
+	} else {
+		videoID = extractYouTubeVideoID(link)
+		id = "yt:" + videoID
+	}
+	if videoID == "" {
+		return domain.GameCatalogItem{}, fmt.Errorf("invalid youtube track")
+	}
+	if link == "" {
+		link = "https://www.youtube.com/watch?v=" + videoID
+	}
+	artist := strings.TrimSpace(entry.Artist)
+	song := strings.TrimSpace(entry.Song)
+	if artist == "" {
+		artist = "YouTube"
+	}
+	if song == "" {
+		song = videoID
+	}
+	return domain.GameCatalogItem{
+		PerformanceID: id,
+		Artist:        artist,
+		Song:          song,
+		CountryName:   "YouTube",
+		FlagEmoji:     "🎵",
+		YoutubeLink:   link,
+		Custom:        true,
+	}, nil
+}
+
+func (s *Service) buildPlaylistFromEntries(ctx context.Context, entries []domain.GamePlaylistEntryInput) ([]domain.GameCatalogItem, []string, error) {
+	if len(entries) == 0 {
+		return nil, nil, nil
+	}
+
+	var catalogIDs []string
+	customEntries := make(map[string]domain.GamePlaylistEntryInput)
+	orderedIDs := make([]string, 0, len(entries))
+
+	for _, e := range entries {
+		id := strings.TrimSpace(e.PerformanceID)
+		link := strings.TrimSpace(e.YoutubeLink)
+
+		if isCustomTrackID(id) {
+			customEntries[id] = e
+			orderedIDs = append(orderedIDs, id)
+			continue
+		}
+
+		if id != "" {
+			if _, err := uuid.Parse(id); err == nil {
+				catalogIDs = append(catalogIDs, id)
+				orderedIDs = append(orderedIDs, id)
+				continue
+			}
+		}
+
+		if link != "" {
+			item, err := customTrackItem(e)
+			if err != nil {
+				continue
+			}
+			customEntries[item.PerformanceID] = e
+			orderedIDs = append(orderedIDs, item.PerformanceID)
+			continue
+		}
+
+		if id != "" {
+			catalogIDs = append(catalogIDs, id)
+			orderedIDs = append(orderedIDs, id)
+		}
+	}
+
+	byID := make(map[string]domain.GameCatalogItem)
+	if len(catalogIDs) > 0 {
+		items, err := s.storage.GetGameCatalogItems(ctx, catalogIDs)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, item := range items {
+			byID[item.PerformanceID] = item
+		}
+	}
+
+	playlist := make([]domain.GameCatalogItem, 0, len(orderedIDs))
+	ids := make([]string, 0, len(orderedIDs))
+	seen := make(map[string]struct{})
+	for _, id := range orderedIDs {
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		if isCustomTrackID(id) {
+			entry, ok := customEntries[id]
+			if !ok {
+				continue
+			}
+			item, err := customTrackItem(entry)
+			if err != nil {
+				continue
+			}
+			playlist = append(playlist, item)
+			ids = append(ids, item.PerformanceID)
+			continue
+		}
+		if item, ok := byID[id]; ok {
+			playlist = append(playlist, item)
+			ids = append(ids, item.PerformanceID)
+		}
+	}
+	return playlist, ids, nil
+}
+
+func shuffleGameCatalog(items []domain.GameCatalogItem, count int) []domain.GameCatalogItem {
+	if count <= 0 || len(items) == 0 {
+		return nil
+	}
+	if count > len(items) {
+		count = len(items)
+	}
+	idx := make([]int, len(items))
+	for i := range idx {
+		idx[i] = i
+	}
+	for i := len(idx) - 1; i > 0; i-- {
+		jBig, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+		if err != nil {
+			j := i
+			idx[i], idx[j] = idx[j], idx[i]
+			continue
+		}
+		j := int(jBig.Int64())
+		idx[i], idx[j] = idx[j], idx[i]
+	}
+	out := make([]domain.GameCatalogItem, 0, count)
+	for i := 0; i < count; i++ {
+		out = append(out, items[idx[i]])
+	}
+	return out
+}
+
+func (s *Service) applyAutoPlaylistLocked(ctx context.Context, room *gameRoomInternal) error {
+	catalog, err := s.storage.ListGameCatalog(ctx)
+	if err != nil {
+		return err
+	}
+	count := room.AutoCount
+	if count < 1 {
+		count = 10
+	}
+	picked := shuffleGameCatalog(catalog, count)
+	if len(picked) == 0 {
+		return ErrGameInvalidState
+	}
+	room.Playlist = picked
+	room.PlaylistIDs = make([]string, len(picked))
+	for i, item := range picked {
+		room.PlaylistIDs[i] = item.PerformanceID
+	}
+	return nil
+}
+
+func parsePlaylistEntries(payload map[string]any) []domain.GamePlaylistEntryInput {
+	if raw, ok := payload["entries"].([]any); ok && len(raw) > 0 {
+		var entries []domain.GamePlaylistEntryInput
+		for _, x := range raw {
+			m, ok := x.(map[string]any)
+			if !ok {
+				continue
+			}
+			e := domain.GamePlaylistEntryInput{}
+			if v, ok := m["performance_id"].(string); ok {
+				e.PerformanceID = v
+			}
+			if v, ok := m["artist"].(string); ok {
+				e.Artist = v
+			}
+			if v, ok := m["song"].(string); ok {
+				e.Song = v
+			}
+			if v, ok := m["youtube_link"].(string); ok {
+				e.YoutubeLink = v
+			}
+			if e.PerformanceID != "" || e.YoutubeLink != "" {
+				entries = append(entries, e)
+			}
+		}
+		return entries
+	}
+	if raw, ok := payload["performance_ids"].([]any); ok {
+		var entries []domain.GamePlaylistEntryInput
+		for _, x := range raw {
+			if str, ok := x.(string); ok && str != "" {
+				entries = append(entries, domain.GamePlaylistEntryInput{PerformanceID: str})
+			}
+		}
+		return entries
+	}
+	return nil
+}
+
+func (s *Service) SetGamePlaylist(ctx context.Context, code string, hostID uuid.UUID, entries []domain.GamePlaylistEntryInput) (*domain.GameRoomView, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
-	items, err := s.storage.GetGameCatalogItems(ctx, ids)
+	playlist, ids, err := s.buildPlaylistFromEntries(ctx, entries)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +440,95 @@ func (s *Service) SetGamePlaylist(ctx context.Context, code string, hostID uuid.
 	}
 
 	room.PlaylistIDs = ids
-	room.Playlist = items
+	room.Playlist = playlist
+	room.PlaylistMode = "manual"
+
+	view := s.roomViewLocked(room)
+	s.broadcastGameRoomLocked(code, view)
+	return view, nil
+}
+
+func (s *Service) SetGamePlaylistMode(code string, hostID uuid.UUID, mode string, count int) (*domain.GameRoomView, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if mode != "auto" {
+		mode = "manual"
+	}
+	if count < 1 {
+		count = 10
+	}
+	if count > 100 {
+		count = 100
+	}
+
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+
+	room, ok := s.gameRooms[code]
+	if !ok {
+		return nil, ErrGameNotFound
+	}
+	if room.HostUserID != hostID {
+		return nil, ErrGameForbidden
+	}
+	if room.State != "lobby" {
+		return nil, ErrGameInvalidState
+	}
+
+	room.PlaylistMode = mode
+	room.AutoCount = count
+
+	view := s.roomViewLocked(room)
+	s.broadcastGameRoomLocked(code, view)
+	return view, nil
+}
+
+func (s *Service) SetGamePlaylistAuto(ctx context.Context, code string, hostID uuid.UUID, count int) (*domain.GameRoomView, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+
+	room, ok := s.gameRooms[code]
+	if !ok {
+		return nil, ErrGameNotFound
+	}
+	if room.HostUserID != hostID {
+		return nil, ErrGameForbidden
+	}
+	if room.State != "lobby" {
+		return nil, ErrGameInvalidState
+	}
+
+	if count >= 1 && count <= 100 {
+		room.AutoCount = count
+	}
+	room.PlaylistMode = "auto"
+	if err := s.applyAutoPlaylistLocked(ctx, room); err != nil {
+		return nil, err
+	}
+
+	view := s.roomViewLocked(room)
+	s.broadcastGameRoomLocked(code, view)
+	return view, nil
+}
+
+func (s *Service) SetGameRoundDuration(code string, hostID uuid.UUID, seconds int) (*domain.GameRoomView, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+
+	room, ok := s.gameRooms[code]
+	if !ok {
+		return nil, ErrGameNotFound
+	}
+	if room.HostUserID != hostID {
+		return nil, ErrGameForbidden
+	}
+	if room.State != "lobby" {
+		return nil, ErrGameInvalidState
+	}
+	room.RoundDurationSec = clampRoundDurationSec(seconds)
 
 	view := s.roomViewLocked(room)
 	s.broadcastGameRoomLocked(code, view)
@@ -201,7 +558,7 @@ func (s *Service) SetGamePoints(code string, hostID uuid.UUID, points int) (*dom
 	return view, nil
 }
 
-func (s *Service) StartGame(code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
+func (s *Service) StartGame(ctx context.Context, code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 
 	s.gameMu.Lock()
@@ -214,30 +571,61 @@ func (s *Service) StartGame(code string, hostID uuid.UUID) (*domain.GameRoomView
 	if room.HostUserID != hostID {
 		return nil, ErrGameForbidden
 	}
-	if room.State != "lobby" || len(room.Playlist) == 0 {
+	if room.State != "lobby" {
+		return nil, ErrGameInvalidState
+	}
+	if room.PlaylistMode == "auto" && len(room.Playlist) == 0 {
+		if err := s.applyAutoPlaylistLocked(ctx, room); err != nil {
+			return nil, err
+		}
+	}
+	if len(room.Playlist) == 0 {
 		return nil, ErrGameInvalidState
 	}
 
 	room.CurrentRound = 0
 	room.Paused = false
 	room.LastJudgement = nil
-	s.startRoundLocked(room)
+	s.startRoundLocked(code, room)
 
 	view := s.roomViewLocked(room)
 	s.broadcastGameRoomLocked(code, view)
 	return view, nil
 }
 
-func (s *Service) startRoundLocked(room *gameRoomInternal) {
-	if room.revealTimer != nil {
-		room.revealTimer.Stop()
-		room.revealTimer = nil
-	}
+func (s *Service) startRoundLocked(code string, room *gameRoomInternal) {
+	s.stopRoundTimer(room)
 	room.BuzzedUserID = nil
 	room.BuzzedUsername = ""
 	room.LastJudgement = nil
+	room.ContestScores = nil
+	room.VideoStartSec = randomVideoStartSec()
 	room.RoundMode = "audio"
 	room.State = "round_playing"
+	dur := s.roundPlayDuration(room)
+	ends := time.Now().Add(dur)
+	room.RoundEndsAt = &ends
+
+	room.roundTimer = time.AfterFunc(dur, func() {
+		s.onRoundPlayTimeout(code)
+	})
+}
+
+func (s *Service) onRoundPlayTimeout(code string) {
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+
+	room, ok := s.gameRooms[code]
+	if !ok || room.State != "round_playing" {
+		return
+	}
+	s.stopRoundTimer(room)
+	room.RoundEndsAt = nil
+	room.State = "round_waiting_reveal"
+	room.RoundMode = "silent"
+
+	view := s.roomViewLocked(room)
+	s.broadcastGameRoomLocked(code, view)
 }
 
 func (s *Service) GameBuzz(code string, userID uuid.UUID) (*domain.GameRoomView, error) {
@@ -260,17 +648,47 @@ func (s *Service) GameBuzz(code string, userID uuid.UUID) (*domain.GameRoomView,
 		return nil, ErrGameAlreadyBuzzed
 	}
 
+	s.stopRoundTimer(room)
+	room.RoundEndsAt = nil
+
 	player := room.Players[userID]
 	room.BuzzedUserID = &userID
 	room.BuzzedUsername = player.Username
 	room.State = "round_buzzed"
+	room.RoundMode = "silent"
 
 	view := s.roomViewLocked(room)
 	s.broadcastGameRoomLocked(code, view)
 	return view, nil
 }
 
-func (s *Service) GameJudge(code string, hostID uuid.UUID, correct bool) (*domain.GameRoomView, error) {
+func (s *Service) loadContestScores(ctx context.Context, room *gameRoomInternal) {
+	if room.CurrentRound >= len(room.Playlist) {
+		return
+	}
+	item := room.Playlist[room.CurrentRound]
+	if item.Custom || isCustomTrackID(item.PerformanceID) {
+		return
+	}
+	perfID, err := uuid.Parse(item.PerformanceID)
+	if err != nil {
+		return
+	}
+	scores, err := s.storage.GetScoresForPerformance(ctx, perfID)
+	if err != nil {
+		log.Debug().Err(err).Msg("game contest scores")
+		return
+	}
+	room.ContestScores = scores
+}
+
+func (s *Service) enterRevealLocked(ctx context.Context, room *gameRoomInternal) {
+	room.State = "round_reveal"
+	room.RoundMode = "video"
+	s.loadContestScores(ctx, room)
+}
+
+func (s *Service) GameJudge(ctx context.Context, code string, hostID uuid.UUID, correct bool) (*domain.GameRoomView, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 
 	s.gameMu.Lock()
@@ -302,48 +720,39 @@ func (s *Service) GameJudge(code string, hostID uuid.UUID, correct bool) (*domai
 		Delta:    delta,
 	}
 
-	room.State = "round_reveal"
-	room.RoundMode = "video"
-	revealUntil := time.Now().Add(gameRevealDuration)
-	roomCode := code
-
-	if room.revealTimer != nil {
-		room.revealTimer.Stop()
-	}
-	room.revealTimer = time.AfterFunc(gameRevealDuration, func() {
-		s.onRevealEnd(roomCode)
-	})
+	s.enterRevealLocked(ctx, room)
 
 	view := s.roomViewLocked(room)
-	view.Round.RevealUntil = &revealUntil
 	s.broadcastGameRoomLocked(code, view)
 	return view, nil
 }
 
-func (s *Service) onRevealEnd(code string) {
+func (s *Service) GameRevealAnswer(ctx context.Context, code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+
 	s.gameMu.Lock()
 	defer s.gameMu.Unlock()
 
 	room, ok := s.gameRooms[code]
-	if !ok || room.State != "round_reveal" {
-		return
+	if !ok {
+		return nil, ErrGameNotFound
 	}
-	room.revealTimer = nil
-
-	if room.CurrentRound+1 >= len(room.Playlist) {
-		room.State = "finished"
-		view := s.roomViewLocked(room)
-		s.broadcastGameRoomLocked(code, view)
-		return
+	if room.HostUserID != hostID {
+		return nil, ErrGameForbidden
+	}
+	if room.State != "round_waiting_reveal" {
+		return nil, ErrGameInvalidState
 	}
 
-	room.CurrentRound++
-	s.startRoundLocked(room)
+	room.LastJudgement = nil
+	s.enterRevealLocked(ctx, room)
+
 	view := s.roomViewLocked(room)
 	s.broadcastGameRoomLocked(code, view)
+	return view, nil
 }
 
-func (s *Service) GameSkipToNext(code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
+func (s *Service) GameStartFullClip(code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))
 
 	s.gameMu.Lock()
@@ -360,16 +769,37 @@ func (s *Service) GameSkipToNext(code string, hostID uuid.UUID) (*domain.GameRoo
 		return nil, ErrGameInvalidState
 	}
 
-	if room.revealTimer != nil {
-		room.revealTimer.Stop()
-		room.revealTimer = nil
+	room.State = "round_clip"
+	room.RoundMode = "video_full"
+
+	view := s.roomViewLocked(room)
+	s.broadcastGameRoomLocked(code, view)
+	return view, nil
+}
+
+func (s *Service) GameAdvanceRound(code string, hostID uuid.UUID) (*domain.GameRoomView, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+
+	s.gameMu.Lock()
+	defer s.gameMu.Unlock()
+
+	room, ok := s.gameRooms[code]
+	if !ok {
+		return nil, ErrGameNotFound
+	}
+	if room.HostUserID != hostID {
+		return nil, ErrGameForbidden
+	}
+	if room.State != "round_reveal" && room.State != "round_clip" {
+		return nil, ErrGameInvalidState
 	}
 
 	if room.CurrentRound+1 >= len(room.Playlist) {
 		room.State = "finished"
+		room.RoundMode = "silent"
 	} else {
 		room.CurrentRound++
-		s.startRoundLocked(room)
+		s.startRoundLocked(code, room)
 	}
 
 	view := s.roomViewLocked(room)
@@ -419,11 +849,24 @@ func (s *Service) roomViewLocked(room *gameRoomInternal) *domain.GameRoomView {
 		State:            room.State,
 		Paused:           room.Paused,
 		PointsPerCorrect: room.PointsPerCorrect,
+		RoundDurationSec: room.RoundDurationSec,
 		Players:          players,
 		PlaylistIDs:      room.PlaylistIDs,
+		PlaylistMode:     room.PlaylistMode,
+		AutoCount:        room.AutoCount,
 		CurrentRound:     room.CurrentRound,
 		TotalRounds:      len(room.Playlist),
 		LastJudgement:    room.LastJudgement,
+	}
+
+	if room.RoundDurationSec <= 0 {
+		view.RoundDurationSec = defaultGameRoundDurationSec
+	}
+
+	if room.State == "lobby" && len(room.Playlist) > 0 {
+		preview := make([]domain.GameCatalogItem, len(room.Playlist))
+		copy(preview, room.Playlist)
+		view.PlaylistPreview = preview
 	}
 
 	if room.BuzzedUserID != nil {
@@ -432,26 +875,59 @@ func (s *Service) roomViewLocked(room *gameRoomInternal) *domain.GameRoomView {
 		view.BuzzedUsername = &room.BuzzedUsername
 	}
 
-	if room.State != "lobby" && len(room.Playlist) > 0 && room.CurrentRound < len(room.Playlist) {
-		item := room.Playlist[room.CurrentRound]
-		round := &domain.GameRoundView{
-			Index:         room.CurrentRound,
-			PerformanceID: item.PerformanceID,
-			YoutubeLink:   item.YoutubeLink,
-			Mode:          room.RoundMode,
-		}
-		if room.State == "round_reveal" || room.State == "finished" {
-			round.Artist = &item.Artist
-			round.Song = &item.Song
-			round.CountryName = &item.CountryName
-			round.FlagEmoji = &item.FlagEmoji
-			round.Year = &item.Year
-			round.ContestType = &item.ContestType
-		}
+	if round := s.buildRoundViewLocked(room); round != nil {
 		view.Round = round
 	}
 
 	return view
+}
+
+func (s *Service) isActiveGameState(state string) bool {
+	switch state {
+	case "round_playing", "round_buzzed", "round_waiting_reveal", "round_reveal", "round_clip":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) buildRoundViewLocked(room *gameRoomInternal) *domain.GameRoundView {
+	if !s.isActiveGameState(room.State) || len(room.Playlist) == 0 {
+		return nil
+	}
+
+	idx := room.CurrentRound
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(room.Playlist) {
+		idx = len(room.Playlist) - 1
+	}
+
+	item := room.Playlist[idx]
+	round := &domain.GameRoundView{
+		Index:         idx,
+		PerformanceID: item.PerformanceID,
+		YoutubeLink:   item.YoutubeLink,
+		Mode:          room.RoundMode,
+		VideoStartSec: room.VideoStartSec,
+	}
+	if room.RoundEndsAt != nil {
+		round.RoundEndsAt = room.RoundEndsAt
+	}
+	revealed := room.State == "round_reveal" || room.State == "round_clip"
+	if revealed {
+		round.Artist = &item.Artist
+		round.Song = &item.Song
+		round.CountryName = &item.CountryName
+		round.FlagEmoji = &item.FlagEmoji
+		round.Year = &item.Year
+		round.ContestType = &item.ContestType
+		if len(room.ContestScores) > 0 {
+			round.ContestScores = room.ContestScores
+		}
+	}
+	return round
 }
 
 func (s *Service) broadcastGameRoomLocked(code string, room *domain.GameRoomView) {
@@ -494,6 +970,8 @@ func (s *Service) ServeGameConn(code string, userID uuid.UUID, username string, 
 				Username: username,
 				Score:    0,
 			}
+		} else if room.Players[userID].Username == "" {
+			room.Players[userID].Username = username
 		}
 		view := s.roomViewLocked(room)
 		s.gameMu.Unlock()
@@ -573,7 +1051,6 @@ func (s *Service) gameReadPump(code string, userID uuid.UUID, conn *websocket.Co
 				log.Debug().Err(err).Str("code", code).Msg("game buzz")
 			}
 		default:
-			// host actions via REST only for simplicity
 		}
 	}
 }
@@ -581,12 +1058,16 @@ func (s *Service) gameReadPump(code string, userID uuid.UUID, conn *websocket.Co
 func (s *Service) HandleGameHostAction(ctx context.Context, code string, hostID uuid.UUID, action string, payload map[string]any) (*domain.GameRoomView, error) {
 	switch action {
 	case "start":
-		return s.StartGame(code, hostID)
+		return s.StartGame(ctx, code, hostID)
 	case "judge":
 		correct, _ := payload["correct"].(bool)
-		return s.GameJudge(code, hostID, correct)
-	case "next":
-		return s.GameSkipToNext(code, hostID)
+		return s.GameJudge(ctx, code, hostID, correct)
+	case "reveal":
+		return s.GameRevealAnswer(ctx, code, hostID)
+	case "clip":
+		return s.GameStartFullClip(code, hostID)
+	case "next_round":
+		return s.GameAdvanceRound(code, hostID)
 	case "pause":
 		return s.GamePause(code, hostID, true)
 	case "resume":
@@ -597,16 +1078,28 @@ func (s *Service) HandleGameHostAction(ctx context.Context, code string, hostID 
 			points = int(v)
 		}
 		return s.SetGamePoints(code, hostID, points)
-	case "set_playlist":
-		var ids []string
-		if raw, ok := payload["performance_ids"].([]any); ok {
-			for _, x := range raw {
-				if str, ok := x.(string); ok {
-					ids = append(ids, str)
-				}
-			}
+	case "set_round_duration":
+		seconds := defaultGameRoundDurationSec
+		if v, ok := payload["seconds"].(float64); ok {
+			seconds = int(v)
 		}
-		return s.SetGamePlaylist(ctx, code, hostID, ids)
+		return s.SetGameRoundDuration(code, hostID, seconds)
+	case "set_playlist":
+		entries := parsePlaylistEntries(payload)
+		return s.SetGamePlaylist(ctx, code, hostID, entries)
+	case "set_playlist_mode":
+		mode, _ := payload["mode"].(string)
+		count := 10
+		if v, ok := payload["count"].(float64); ok {
+			count = int(v)
+		}
+		return s.SetGamePlaylistMode(code, hostID, mode, count)
+	case "set_playlist_auto":
+		count := 0
+		if v, ok := payload["count"].(float64); ok {
+			count = int(v)
+		}
+		return s.SetGamePlaylistAuto(ctx, code, hostID, count)
 	default:
 		return nil, fmt.Errorf("unknown action: %s", action)
 	}
