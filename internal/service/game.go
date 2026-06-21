@@ -53,8 +53,11 @@ type gameRoomInternal struct {
 	RoundMode        string
 	VideoStartSec    int
 	RoundEndsAt      *time.Time
-	ContestScores    []domain.GameContestScore
-	LastJudgement    *domain.GameJudgement
+	ContestScores     []domain.GameContestScore
+	ContestTotalScore float64
+	ContestQualified  *bool
+	ContestPlace      *int
+	LastJudgement     *domain.GameJudgement
 	roundTimer       *time.Timer
 	clipTimer        *time.Timer
 	roundPauseRemaining time.Duration
@@ -640,6 +643,9 @@ func (s *Service) startRoundLocked(code string, room *gameRoomInternal) {
 	room.BuzzedAnswer = ""
 	room.LastJudgement = nil
 	room.ContestScores = nil
+	room.ContestTotalScore = 0
+	room.ContestQualified = nil
+	room.ContestPlace = nil
 	room.VideoStartSec = randomVideoStartSec()
 	room.RoundMode = "silent"
 	room.State = "round_countdown"
@@ -780,9 +786,23 @@ func (s *Service) loadContestScores(ctx context.Context, room *gameRoomInternal)
 	scores, err := s.storage.GetScoresForPerformance(ctx, perfID)
 	if err != nil {
 		log.Debug().Err(err).Msg("game contest scores")
+	} else {
+		room.ContestScores = scores
+	}
+	stats, err := s.storage.GetPerformanceRevealStats(ctx, perfID)
+	if err != nil {
+		log.Debug().Err(err).Msg("game performance reveal stats")
 		return
 	}
-	room.ContestScores = scores
+	room.ContestTotalScore = stats.TotalScore
+	if stats.Qualified.Valid {
+		q := stats.Qualified.Bool
+		room.ContestQualified = &q
+	}
+	if stats.Place.Valid && stats.Place.Int32 > 0 {
+		p := int(stats.Place.Int32)
+		room.ContestPlace = &p
+	}
 }
 
 func (s *Service) enterRevealLocked(ctx context.Context, room *gameRoomInternal) {
@@ -1113,6 +1133,18 @@ func (s *Service) buildRoundViewLocked(room *gameRoomInternal, forHost bool) *do
 		round.ContestType = &item.ContestType
 		if len(room.ContestScores) > 0 {
 			round.ContestScores = room.ContestScores
+		}
+		if len(room.ContestScores) > 0 || room.ContestTotalScore > 0 {
+			ts := room.ContestTotalScore
+			round.TotalScore = &ts
+		}
+		if room.ContestQualified != nil {
+			q := *room.ContestQualified
+			round.Qualified = &q
+		}
+		if room.ContestPlace != nil {
+			p := *room.ContestPlace
+			round.Place = &p
 		}
 	}
 	return round

@@ -76,6 +76,11 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 		r.Get("/scores", s.getScoresFiltered)
 		r.Get("/countries", s.getCountries)
 
+		r.Get("/favorites", s.listFavoritePerformances)
+		r.With(s.AuthMiddleware).Get("/favorites/ids", s.listFavoritePerformanceIDs)
+		r.With(s.AuthMiddleware).Post("/favorites/{id}", s.addPerformanceFavorite)
+		r.With(s.AuthMiddleware).Delete("/favorites/{id}", s.removePerformanceFavorite)
+
 		r.Route("/proxy", func(r chi.Router) {
 			r.Get("/youtube/search", s.proxyYouTubeSearch)
 			r.Get("/giphy/search", s.proxyGiphySearch)

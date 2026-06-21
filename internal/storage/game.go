@@ -2,10 +2,17 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"eurovision-voting/internal/domain"
 
 	"github.com/google/uuid"
 )
+
+type PerformanceRevealStats struct {
+	TotalScore float64
+	Qualified  sql.NullBool
+	Place      sql.NullInt32
+}
 
 func (s *Storage) ListGameCatalog(ctx context.Context) ([]domain.GameCatalogItem, error) {
 	query := `
@@ -103,6 +110,23 @@ func (s *Storage) GetGameCatalogItems(ctx context.Context, ids []string) ([]doma
 		}
 	}
 	return ordered, nil
+}
+
+func (s *Storage) GetPerformanceRevealStats(ctx context.Context, performanceID uuid.UUID) (*PerformanceRevealStats, error) {
+	query := `
+		SELECT
+			COALESCE((SELECT AVG(score)::float8 FROM scores WHERE performance_id = p.id), 0),
+			p.qualified,
+			p.place
+		FROM performance p
+		WHERE p.id = $1
+	`
+	var stats PerformanceRevealStats
+	err := s.pool.QueryRow(ctx, query, performanceID).Scan(&stats.TotalScore, &stats.Qualified, &stats.Place)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
 }
 
 func (s *Storage) GetScoresForPerformance(ctx context.Context, performanceID uuid.UUID) ([]domain.GameContestScore, error) {

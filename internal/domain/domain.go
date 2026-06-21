@@ -112,16 +112,30 @@ type ScoreFiltered struct {
 	PerformanceID string
 	Username      string
 	CountryName   string
-	ContestYear int
-	ContestType string
-	Score       int
-	Comment     *string
-	YoutubeLink string
-	GifURL      *string
-	Song        string
-	Artist      string
-	Qualified   *bool
-	Place       *int
+	ContestYear   int
+	ContestType   string
+	Score         int
+	Comment       *string
+	YoutubeLink   string
+	GifURL        *string
+	Song          string
+	Artist        string
+	Qualified     *bool
+	Place         *int
+}
+
+type FavoritePerformance struct {
+	PerformanceID string    `json:"PerformanceID"`
+	CountryName   string    `json:"CountryName"`
+	FlagEmoji     string    `json:"FlagEmoji"`
+	ContestYear   int       `json:"ContestYear"`
+	ContestType   string    `json:"ContestType"`
+	Song          string    `json:"Song"`
+	Artist        string    `json:"Artist"`
+	YoutubeLink   string    `json:"YoutubeLink"`
+	Qualified     *bool     `json:"Qualified,omitempty"`
+	Place         *int      `json:"Place,omitempty"`
+	CreatedAt     time.Time `json:"CreatedAt"`
 }
 
 type SortType int

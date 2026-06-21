@@ -41,6 +41,9 @@ type GameRoundView struct {
 	ContestType   *string `json:"contest_type,omitempty"`
 	RoundEndsAt   *time.Time `json:"round_ends_at,omitempty"`
 	ContestScores []GameContestScore `json:"contest_scores,omitempty"`
+	TotalScore    *float64 `json:"total_score,omitempty"`
+	Qualified     *bool    `json:"qualified,omitempty"`
+	Place         *int     `json:"place,omitempty"`
 }
 
 type GamePlaylistEntryInput struct {
