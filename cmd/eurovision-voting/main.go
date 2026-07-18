@@ -33,7 +33,7 @@ func main() {
 
 	jwt := jwtSvc.NewJWTService(jwtSvc.Config{
 		Secret:     os.Getenv("JWT_SECRET"),
-		Expiration: 24 * time.Hour,
+		Expiration: 5 * 24 * time.Hour,
 	})
 
 	storage, err := storage.New(ctx, storage.Config{
