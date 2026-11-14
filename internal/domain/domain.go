@@ -58,11 +58,12 @@ type Country struct {
 }
 
 type Contest struct {
-	ID     uuid.UUID `json:"id"`
-	Type   string    `json:"type"`
-	Year   int       `json:"year"`
-	Starts time.Time `json:"starts"`
-	Ends   time.Time `json:"ends"`
+	ID        uuid.UUID `json:"id"`
+	Type      string    `json:"type"`
+	Year      int       `json:"year"`
+	Starts    time.Time `json:"starts"`
+	Ends      time.Time `json:"ends"`
+	HasScores bool      `json:"has_scores"`
 }
 
 type Performance struct {

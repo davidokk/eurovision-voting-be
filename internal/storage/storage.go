@@ -122,19 +122,34 @@ func (s *Storage) ClearUserAvatar(ctx context.Context, userID uuid.UUID) error {
 }
 
 func (s *Storage) GetContestList(ctx context.Context) ([]domain.Contest, error) {
-	rows, err := s.pool.Query(ctx, "select id, year, type from contests order by type")
+	rows, err := s.pool.Query(ctx, `
+		SELECT
+			c.id,
+			c.year,
+			c.type,
+			EXISTS (
+				SELECT 1
+				FROM performance p
+				JOIN scores sc ON sc.performance_id = p.id
+				WHERE p.contest_id = c.id
+			) AS has_scores
+		FROM contests c
+		ORDER BY c.year, c.type
+	`)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
+
 	res := []domain.Contest{}
 	for rows.Next() {
 		c := domain.Contest{}
-		if err := rows.Scan(&c.ID, &c.Year, &c.Type); err != nil {
+		if err := rows.Scan(&c.ID, &c.Year, &c.Type, &c.HasScores); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		res = append(res, c)
 	}
-	return res, nil
+	return res, rows.Err()
 }
 
 func (s *Storage) GetContestByPerformance(ctx context.Context, id uuid.UUID) (*domain.Contest, error) {
