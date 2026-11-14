@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	jwtSvc "eurovision-voting/internal/jwt"
 	"eurovision-voting/internal/media"
 	"eurovision-voting/internal/server"
@@ -10,6 +11,7 @@ import (
 	"eurovision-voting/internal/telegram"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -54,23 +56,30 @@ func main() {
 	signupAllowed := os.Getenv("SIGNUP_ALLOWED") != "0"
 	svc := service.New(storage, jwt, s3, os.Getenv("TELEGRAM_BOT_USERNAME"), signupAllowed)
 
-	wg := sync.WaitGroup{}
+	srv := server.New(svc, jwt)
+
+	var bot *telegram.Bot
+	webhookBase := ""
+	webhookSecret := ""
 
 	if token := os.Getenv("TELEGRAM_BOT_TOKEN"); token != "" {
-		bot, err := telegram.NewBot(token, svc)
+		bot, err = telegram.NewBot(token, svc)
 		if err != nil {
 			log.Error().Err(err).Msg("telegram bot disabled")
+			bot = nil
 		} else {
 			svc.SetTelegramBotUsername(bot.Username())
-			wg.Go(func() {
-				bot.Run(ctx)
-			})
+			webhookBase = strings.TrimRight(strings.TrimSpace(os.Getenv("TELEGRAM_WEBHOOK_BASE_URL")), "/")
+			webhookSecret = strings.TrimSpace(os.Getenv("TELEGRAM_WEBHOOK_SECRET"))
+			if webhookBase != "" {
+				srv.SetTelegramWebhook(bot.WebhookHandler())
+			}
 		}
 	} else {
 		log.Warn().Msg("TELEGRAM_BOT_TOKEN not set — Telegram auth disabled")
 	}
 
-	srv := server.New(svc, jwt)
+	wg := sync.WaitGroup{}
 
 	wg.Go(func() {
 		log.Info().Msgf("Starting public server at: %s", defaultAddrPublic)
@@ -78,6 +87,20 @@ func main() {
 			log.Error().Err(err).Msg("Could not serve public endpoints.")
 		}
 	})
+
+	if bot != nil {
+		if webhookBase != "" {
+			webhookURL := fmt.Sprintf("%s/v1/telegram/webhook", webhookBase)
+			if err := bot.SetWebhook(webhookURL, webhookSecret); err != nil {
+				log.Fatal().Err(err).Str("url", webhookURL).Msg("telegram setWebhook")
+			}
+		} else {
+			log.Warn().Msg("TELEGRAM_WEBHOOK_BASE_URL not set — falling back to long polling")
+			wg.Go(func() {
+				bot.RunPolling(ctx)
+			})
+		}
+	}
 
 	wg.Wait()
 }

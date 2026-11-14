@@ -5,6 +5,7 @@ import (
 	"errors"
 	"eurovision-voting/internal/service"
 	"fmt"
+	"net/http"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -12,8 +13,9 @@ import (
 )
 
 type Bot struct {
-	api *tgbotapi.BotAPI
-	svc *service.Service
+	api         *tgbotapi.BotAPI
+	svc         *service.Service
+	secretToken string
 }
 
 func NewBot(token string, svc *service.Service) (*Bot, error) {
@@ -29,8 +31,85 @@ func (b *Bot) Username() string {
 	return b.api.Self.UserName
 }
 
-func (b *Bot) Run(ctx context.Context) {
-	log.Info().Str("username", b.api.Self.UserName).Msg("telegram bot started")
+// SetWebhook registers the HTTPS webhook with Telegram and stops long-polling.
+// secret_token is sent via MakeRequest because telegram-bot-api v5.5.1's
+// WebhookConfig does not expose the field yet.
+func (b *Bot) SetWebhook(webhookURL, secretToken string) error {
+	b.secretToken = strings.TrimSpace(secretToken)
+	webhookURL = strings.TrimSpace(webhookURL)
+	if webhookURL == "" {
+		return fmt.Errorf("telegram webhook url is empty")
+	}
+
+	params := tgbotapi.Params{
+		"url":                  webhookURL,
+		"max_connections":      "40",
+		"drop_pending_updates": "true",
+	}
+	if b.secretToken != "" {
+		params["secret_token"] = b.secretToken
+	}
+
+	resp, err := b.api.MakeRequest("setWebhook", params)
+	if err != nil {
+		return fmt.Errorf("telegram setWebhook: %w", err)
+	}
+	if resp != nil && !resp.Ok {
+		return fmt.Errorf("telegram setWebhook not ok: %s", resp.Description)
+	}
+
+	info, err := b.api.GetWebhookInfo()
+	if err != nil {
+		log.Warn().Err(err).Msg("telegram getWebhookInfo")
+	} else {
+		log.Info().
+			Str("url", info.URL).
+			Int("pending", info.PendingUpdateCount).
+			Msg("telegram webhook registered")
+	}
+	return nil
+}
+
+// DeleteWebhook removes the webhook (useful for local polling fallback).
+func (b *Bot) DeleteWebhook() error {
+	_, err := b.api.Request(tgbotapi.DeleteWebhookConfig{DropPendingUpdates: true})
+	return err
+}
+
+// WebhookHandler processes Telegram Update POSTs.
+func (b *Bot) WebhookHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if b.secretToken != "" {
+			got := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
+			if got != b.secretToken {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+		}
+
+		update, err := b.api.HandleUpdate(r)
+		if err != nil {
+			log.Error().Err(err).Msg("telegram handle update")
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		b.handleUpdate(r.Context(), *update)
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+// RunPolling is a local-dev fallback when webhook URL is not configured.
+func (b *Bot) RunPolling(ctx context.Context) {
+	if err := b.DeleteWebhook(); err != nil {
+		log.Warn().Err(err).Msg("telegram deleteWebhook before polling")
+	}
+
+	log.Info().Str("username", b.api.Self.UserName).Msg("telegram bot polling started")
 
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
@@ -39,6 +118,7 @@ func (b *Bot) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			b.api.StopReceivingUpdates()
 			return
 		case update, ok := <-updates:
 			if !ok {

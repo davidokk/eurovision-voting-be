@@ -14,9 +14,10 @@ import (
 )
 
 type Server struct {
-	service      *service.Service
-	jwt          *jwt.Service
-	publicRouter *chi.Mux
+	service         *service.Service
+	jwt             *jwt.Service
+	publicRouter    *chi.Mux
+	telegramWebhook http.HandlerFunc
 }
 
 func New(service *service.Service, jwt *jwt.Service) *Server {
@@ -45,10 +46,23 @@ func New(service *service.Service, jwt *jwt.Service) *Server {
 	return srv
 }
 
+// SetTelegramWebhook registers the handler for POST /v1/telegram/webhook.
+func (s *Server) SetTelegramWebhook(h http.HandlerFunc) {
+	s.telegramWebhook = h
+}
+
 func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 	s.publicRouter.Use(mws...)
 
 	s.publicRouter.Route("/v1", func(r chi.Router) {
+		r.Post("/telegram/webhook", func(w http.ResponseWriter, req *http.Request) {
+			if s.telegramWebhook == nil {
+				http.NotFound(w, req)
+				return
+			}
+			s.telegramWebhook(w, req)
+		})
+
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/signin", s.signinHandler)
 			r.Post("/signup", s.signupHandler)
