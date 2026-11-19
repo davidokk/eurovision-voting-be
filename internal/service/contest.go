@@ -14,6 +14,25 @@ func (s *Service) GetContestView(ctx context.Context, contestID uuid.UUID) (*dom
 	return s.storage.GetContestView(ctx, contestID)
 }
 
+const topCacheTTL = 10 * time.Minute
+
+func (s *Service) GetTopPerformances(ctx context.Context) ([]domain.PerformanceWithScores, error) {
+	s.topMu.Lock()
+	defer s.topMu.Unlock()
+
+	if s.topCache != nil && time.Now().Before(s.topCacheExp) {
+		return s.topCache, nil
+	}
+
+	items, err := s.storage.GetTopPerformances(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.topCache = items
+	s.topCacheExp = time.Now().Add(topCacheTTL)
+	return items, nil
+}
+
 func (s *Service) GetContestsByYears(ctx context.Context) (map[int][]domain.Contest, error) {
 	cts, err := s.storage.GetContestList(ctx)
 	if err != nil {

@@ -29,6 +29,18 @@ func (s *Server) getContestViewHandler(w http.ResponseWriter, r *http.Request) {
 	EncodeJSONResponse(w, http.StatusOK, res)
 }
 
+func (s *Server) getTopPerformances(w http.ResponseWriter, r *http.Request) {
+	res, err := s.service.GetTopPerformances(r.Context())
+	if err != nil {
+		EncodeJSONResponse(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if res == nil {
+		res = []domain.PerformanceWithScores{}
+	}
+	EncodeJSONResponse(w, http.StatusOK, res)
+}
+
 func (s *Server) getContestsByYearHandler(w http.ResponseWriter, r *http.Request) {
 	res, err := s.service.GetContestsByYears(r.Context())
 	if err != nil {

@@ -275,6 +275,70 @@ func (s *Storage) GetContestView(ctx context.Context, contestID uuid.UUID) (*dom
 	}, nil
 }
 
+func (s *Storage) GetTopPerformances(ctx context.Context) ([]domain.PerformanceWithScores, error) {
+	query := `
+		SELECT COALESCE(json_agg(item ORDER BY avg_score DESC, year DESC, number ASC), '[]'::json)
+		FROM (
+			SELECT
+				json_build_object(
+					'performance_id', p.id,
+					'qualified', p.qualified,
+					'country', json_build_object(
+						'id', co.id,
+						'name_ru', co.name_ru,
+						'flag_emoji', co.flag_emogi
+					),
+					'artist', p.artist,
+					'song', p.song,
+					'number', p.number,
+					'youtube_link', p.youtube_link,
+					'place', p.place,
+					'total_score', s.total_score,
+					'scores', COALESCE(sc.scores, '[]'::json),
+					'year', c.year,
+					'contest_type', c.type
+				) AS item,
+				s.total_score AS avg_score,
+				c.year AS year,
+				p.number AS number
+			FROM performance p
+			JOIN contests c ON c.id = p.contest_id
+			JOIN countries co ON co.id = p.country_id
+			JOIN (
+				SELECT performance_id, AVG(score) AS total_score
+				FROM scores
+				GROUP BY performance_id
+			) s ON s.performance_id = p.id
+			LEFT JOIN (
+				SELECT
+					performance_id,
+					json_agg(
+						json_build_object(
+							'user_id', sc.user_id,
+							'username', u.username,
+							'score', sc.score,
+							'comment', sc.comment,
+							'gif_url', sc.gif_url
+						)
+					) AS scores
+				FROM scores sc
+				JOIN users u ON u.id = sc.user_id
+				GROUP BY performance_id
+			) sc ON sc.performance_id = p.id
+		) ranked
+	`
+
+	var raw json.RawMessage
+	if err := s.pool.QueryRow(ctx, query).Scan(&raw); err != nil {
+		return nil, err
+	}
+	performances := []domain.PerformanceWithScores{}
+	if err := json.Unmarshal(raw, &performances); err != nil {
+		return nil, err
+	}
+	return performances, nil
+}
+
 func (s *Storage) RatePerformance(ctx context.Context, userID, performanceID uuid.UUID, score int, comment string, gif string) (int, error) {
 	query := `
 		with old as (

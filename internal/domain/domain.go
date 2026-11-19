@@ -102,6 +102,8 @@ type PerformanceWithScores struct {
 	TotalScore    float64     `json:"total_score"`
 	Qualified     bool        `json:"qualified"`
 	Place         *int        `json:"place"`
+	Year          int         `json:"year,omitempty"`
+	ContestType   string      `json:"contest_type,omitempty"`
 }
 
 type ContestView struct {

@@ -82,6 +82,8 @@ func (s *Server) registerPublicRoutes(mws ...func(http.Handler) http.Handler) {
 
 		r.With(s.AuthMiddleware, s.VerifiedAccountMiddleware).Post("/media/upload", s.uploadMedia)
 
+		r.Get("/top", s.getTopPerformances)
+
 		r.Route("/contest", func(r chi.Router) {
 			r.Get("/", s.getContestsByYearHandler)
 			r.Get("/{id}", s.getContestViewHandler)

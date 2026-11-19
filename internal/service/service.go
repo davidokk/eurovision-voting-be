@@ -1,11 +1,13 @@
 package service
 
 import (
+	"eurovision-voting/internal/domain"
 	"eurovision-voting/internal/jwt"
 	"eurovision-voting/internal/media"
 	"eurovision-voting/internal/storage"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -24,6 +26,10 @@ type Service struct {
 	gameMu        sync.RWMutex
 	gameRooms     map[string]*gameRoomInternal
 	gameRoomConns map[string]map[uuid.UUID]*websocket.Conn
+
+	topMu       sync.Mutex
+	topCache    []domain.PerformanceWithScores
+	topCacheExp time.Time
 }
 
 func New(storage *storage.Storage, jwtSvc *jwt.Service, s3 *media.S3, telegramBotUsername string, signupAllowed bool) *Service {
